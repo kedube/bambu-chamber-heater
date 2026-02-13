@@ -1,0 +1,610 @@
+#
+# Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers using the 
+# ESP8285 (XY-WFPOW) microcontroller. Designed to work with Bambu 3D Printers as a chamber heater controller.
+# Copyright (C) 2026    Katherine Dubé
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+substitutions:
+  device_name: "chamber-heater"
+  friendly_name: "Chamber Heater Controller"
+  baud_rate: "115200"
+  modbus_slave_address: "0x1"
+  modbus_update_interval: "10s"
+  temp_multiplier: "0.1"
+  sw_version: "1.2"
+
+globals:
+  - id: restart_confirmed
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: modbus_debugging
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+packages:
+  select_units: !include 
+    # Select the appropriate temperature unit file to include based on your preference. 
+    # Both files define the same entities, but with different units and value ranges.
+    file: celsius.yaml
+    #file: fahrenheit.yaml
+
+script:
+  - id: write_temp_unit
+    mode: queued
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(temperature_unit).state != std::string("${temp_unit}");
+          then:
+            - select.set:
+                id: set_temperature_unit
+                option: "${temp_unit}"
+
+esp8266:
+  board: esp8285
+  restore_from_flash: true
+  framework:
+    version: latest
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  area: !secret location_name
+  on_boot: 
+    priority: 200
+    then:
+      - script.execute: write_temp_unit
+  #platformio_options:
+  #  upload_port: ${device_name} + ".local"
+  #  upload_flags: -a !secret ota_password
+  #  upload_protocol: espota
+
+logger:
+  level: DEBUG
+  # Log Levels: NONE, ERROR, WARN, INFO, DEBUG, VERBOSE, VERY_VERBOSE
+  # Disable logging via UART, since we're using this for modbus communication
+  baud_rate: 0 #Serial logging can be disabled by setting baud_rate: 0.
+
+# Enable status LED
+status_led:
+  pin:
+    number: GPIO2
+    inverted: true
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret encryption_key
+
+ota:
+  # Keep standard ESPHome OTA (Dashboard/CLI)
+  - platform: esphome
+    password: !secret ota_password
+  # And enable OTA uploads via the web UI
+  - platform: web_server
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  min_auth_mode: WPA2
+  power_save_mode: none
+  fast_connect: on
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: !secret ap_wifi_ssid
+    password: !secret ap_wifi_password
+  #manual_ip:
+  #  static_ip: !secret static_ip
+  #  gateway: !secret gateway
+  #  subnet: !secret subnet
+  #  dns1: !secret dns1
+  #  dns2: !secret dns2
+
+captive_portal:
+
+uart:
+  - id: uart_bus
+    tx_pin: GPIO1
+    rx_pin: GPIO3
+    baud_rate: ${baud_rate}
+    data_bits: 8
+    parity: NONE
+    stop_bits: 1
+    debug:
+      direction: BOTH
+      dummy_receiver: false
+      after:
+        delimiter: "\n"
+      sequence:
+        - lambda: |-
+            if (id(modbus_debugging)) {
+              UARTDebug::log_hex(direction, bytes, ' '); // Verbose Hex
+            } 
+
+modbus:
+  send_wait_time: 1s
+  uart_id: uart_bus
+  disable_crc: false
+  role: client
+  id: modbus1
+
+modbus_controller:
+  - id: modbus_device
+    address: ${modbus_slave_address}  # Default address of the Modbus slave device on the bus
+    modbus_id: modbus1
+    setup_priority: -10
+    update_interval: ${modbus_update_interval}
+
+sensor:
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Delay Time Remaining"
+    device_class: duration
+    state_class: measurement
+    address: 0x0002
+    register_type: holding
+    value_type: U_WORD
+    unit_of_measurement: "s"
+    id: delay_time_remaining
+    icon: "mdi:timer-outline"
+    web_server:
+      sorting_group_id: sorting_group_sensors
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Current Temp"
+    device_class: temperature
+    state_class: measurement
+    address: 0x0003
+    register_type: holding
+    value_type: S_WORD
+    unit_of_measurement: "${temp_unit_label}"
+    accuracy_decimals: 1
+    filters:
+      - multiply: ${temp_multiplier}
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: "return x > id(high_temp_alarm).state;"
+            then:
+              - switch.turn_on: emergency_stop
+              - lambda: |-
+                  ESP_LOGE("safety",
+                    "EMERGENCY: Temperature %.1f%s exceeds High Temperature Alarm: %.1f%s",
+                    id(current_temperature).state,
+                    "${temp_unit_label}",
+                    id(high_temp_alarm).state,
+                    "${temp_unit_label}"
+                  );
+    id: current_temperature
+    icon: "mdi:thermometer"
+    web_server:
+      sorting_group_id: sorting_group_sensors
+
+  - platform: wifi_signal
+    name: "WiFi Signal Strength"
+    device_class: signal_strength
+    state_class: measurement
+    unit_of_measurement: "dBm"
+    update_interval: 60s
+    id: wifi_signal_strength
+    icon: "mdi:wifi-strength-3"
+    web_server:
+      sorting_group_id: sorting_group_diagnostic
+
+binary_sensor:
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Alarm Active"
+    address: 0x000C
+    register_type: holding
+    on_press:
+      then: 
+        - logger.log:
+            format: "Warning temperature alarm triggered!"
+            level: WARN
+    id: alarm_active
+    icon: "mdi:alarm-bell"
+    web_server:
+      sorting_group_id: sorting_group_sensors
+
+text_sensor:
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Controller Status"
+    address: 0x0000
+    register_type: holding
+    register_count: 1
+    response_size: 2
+    raw_encode: HEXBYTES
+    id: controller_status
+    icon: "mdi:thermostat"
+    lambda: |-
+      uint16_t v = modbus_controller::word_from_hex_str(x, 0);
+      if (v == 0) return std::string("Stopped");
+      if (v == 1) return std::string("Active");
+      return std::string("Unknown");
+    web_server:
+      sorting_group_id: sorting_group_sensors
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Temp Sensor Status"
+    address: 0x0001 
+    register_type: holding
+    register_count: 1
+    response_size: 2
+    raw_encode: HEXBYTES
+    id: sensor_status
+    icon: "mdi:information-outline"
+    lambda: |-
+      uint16_t v = modbus_controller::word_from_hex_str(x, 0);
+      if (v == 0) return std::string("Connected");
+      if (v == 1) return std::string("Disconnected");
+      return std::string("Unknown");
+    web_server:
+      sorting_group_id: sorting_group_sensors
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Temp Unit"
+    address: 0x0004
+    register_type: holding
+    register_count: 1
+    response_size: 2
+    raw_encode: HEXBYTES
+    id: temperature_unit
+    icon: "mdi:temperature-auto"
+    lambda: |-
+      uint16_t v = modbus_controller::word_from_hex_str(x, 0);
+      if (v == 0) return std::string("Celsius");
+      if (v == 1) return std::string("Fahrenheit");
+      return std::string("Unknown");
+    web_server:
+      sorting_group_id: sorting_group_sensors
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Controller Mode"
+    address: 0x0005
+    register_type: holding
+    register_count: 1
+    response_size: 2
+    raw_encode: HEXBYTES
+    id: controller_mode
+    icon: "mdi:thermostat-cog"
+    lambda: |-
+      uint16_t v = modbus_controller::word_from_hex_str(x, 0);
+      if (v == 0) return std::string("Heating");
+      if (v == 1) return std::string("Cooling");
+      return std::string("Unknown");
+    web_server:
+      sorting_group_id: sorting_group_sensors
+
+  - platform: version
+    name: "Firmware Version"
+    id: firmware_version
+    hide_timestamp: true
+    icon: "mdi:chip"
+    web_server:
+      sorting_group_id: sorting_group_diagnostic
+
+  - platform: template
+    name: "WIFI SSID"
+    entity_category: diagnostic
+    id: wifi_ssid
+    icon: "mdi:wifi"
+    lambda: |-
+      return std::string(!WiFi.SSID().isEmpty() ? WiFi.SSID().c_str() : "Not Connected");
+    web_server:
+      sorting_group_id: sorting_group_diagnostic
+
+  - platform: template
+    name: "IP Address"
+    entity_category: diagnostic
+    id: ip_address
+    icon: "mdi:ip"
+    lambda: |-
+      if (WiFi.isConnected()) {
+        return std::string(WiFi.localIP().toString().c_str());
+      } else {
+        return std::string("Not Connected");
+      }
+    web_server:
+      sorting_group_id: sorting_group_diagnostic
+ 
+  - platform: template
+    name: "Software Version"
+    entity_category: diagnostic
+    id: software_version
+    icon: "mdi:information-variant"
+    lambda: |-
+      return std::string("${sw_version}");
+    web_server:
+      sorting_group_id: sorting_group_diagnostic
+
+  - platform: uptime
+    name: "System Uptime"
+    format:
+      separator: " "
+    id: system_uptime
+    icon: "mdi:clock-start"
+    web_server:
+      sorting_group_id: sorting_group_diagnostic
+
+number:
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Delay Start Time"
+    address: 0x000A
+    register_type: holding
+    value_type: U_WORD
+    unit_of_measurement: "s"
+    min_value: 0
+    max_value: 999
+    step: 1
+    mode: box
+    entity_category: config
+    id: delay_start_time
+    icon: "mdi:timer-sand"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Modbus Address"
+    address: 0x0012
+    register_type: holding
+    value_type: U_WORD
+    min_value: 1
+    max_value: 247
+    step: 1
+    mode: box
+    entity_category: config
+    id: modbus_slave_address
+    icon: "mdi:hexadecimal"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Backlight Level"
+    address: 0x0015
+    register_type: holding
+    value_type: U_WORD
+    min_value: 0
+    max_value: 7
+    step: 1
+    mode: box
+    entity_category: config
+    id: backlight_level
+    icon: "mdi:lightbulb"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+select:
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Set Temperature Unit"
+    address: 0x0004
+    value_type: U_WORD
+    use_write_multiple: false
+    entity_category: config
+    optionsmap:
+      "Celsius": 0
+      "Fahrenheit": 1
+    id: set_temperature_unit
+    icon: "mdi:temperature-auto"
+    internal: true
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Modbus Baudrate"
+    address: 0x0013
+    value_type: U_WORD
+    use_write_multiple: false
+    entity_category: config
+    optionsmap:
+      "9600": 0
+      "14400": 1
+      "19200": 2
+      "38400": 3
+      "56000": 4
+      "57600": 5
+      "115200": 6
+    id: modbus_baudrate
+    icon: "mdi:console"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+switch: 
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Alarm Sound"
+    address: 0x000D
+    register_type: holding
+    use_write_multiple: false
+    entity_category: config
+    id: alarm_sound
+    icon: "mdi:alarm-check"
+    web_server:
+      sorting_group_id: sorting_group_settings
+ 
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "High Temp Alarm"
+    address: 0x000E
+    register_type: holding
+    use_write_multiple: false
+    entity_category: config
+    id: high_temp_alarm_enable
+    icon: "mdi:temperature-alert"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Low Temp Alarm"
+    address: 0x000F
+    register_type: holding
+    use_write_multiple: false
+    entity_category: config
+    id: low_temp_alarm_enable
+    icon: "mdi:temperature-alert"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Delay Start"
+    address: 0x0010
+    register_type: holding
+    use_write_multiple: false
+    entity_category: config
+    id: delay_start
+    icon: "mdi:timer-check-outline"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Emergency Stop"
+    address: 0x0011
+    register_type: holding
+    use_write_multiple: false
+    id: emergency_stop
+    icon: "mdi:car-brake-alert"
+    on_turn_on:
+      - logger.log:
+          format: "Emergency stopped enabled"
+          level: INFO
+    on_turn_off:
+      - logger.log:
+          format: "Emergency stopped disabled"
+          level: INFO
+    web_server:
+      sorting_group_id: sorting_group_system
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Sleep"
+    address: 0x0014
+    register_type: holding
+    use_write_multiple: false
+    entity_category: config
+    id: sleep_switch
+    icon: "mdi:power-sleep"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  # Log Level DEBUG must be defined
+  - platform: template
+    name: "Modbus Debugging"
+    optimistic: true
+    turn_on_action:
+      then:
+        - lambda: |-
+            id(modbus_debugging) = true;
+            ESP_LOGI("switch", "Modbus Debugging enabled");
+    turn_off_action:
+      then:
+        - lambda: |-
+            id(modbus_debugging) = false;
+            ESP_LOGI("switch", "Modbus Debugging disabled");
+    entity_category: config
+    id: modbus_debugging_switch
+    icon: "mdi:bug"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: template
+    name: "Restart Confirmation"
+    optimistic: true
+    turn_on_action:
+      - globals.set:
+          id: restart_confirmed
+          value: 'true'
+      - delay: 10s
+      - logger.log:
+          format: "Restart timed out"
+          level: INFO
+      - switch.turn_off: restart_confirmation
+    turn_off_action:
+      - globals.set:
+          id: restart_confirmed
+          value: 'false'
+    id: restart_confirmation
+    icon: "mdi:shield-check-outline"
+    web_server:
+      sorting_group_id: sorting_group_system        
+
+button:
+  - platform: template
+    name: "Restart"
+    id: restart_button
+    on_press:
+      - if:
+          condition:
+            lambda: 'return id(restart_confirmed);'
+          then:
+            - logger.log:
+                format: "Restarting device..."
+                level: WARN
+            - switch.turn_off: restart_confirmation
+            - button.press: internal_restart
+          else:
+            - logger.log:
+                format: "Restart denied: Click the restart confirmation switch first!"
+                level: INFO
+    icon: "mdi:restart"
+    web_server:
+      sorting_group_id: sorting_group_system
+
+  - platform: restart
+    name: "Internal Restart"
+    id: internal_restart
+    internal: true
+    
+web_server:
+  port: 80
+  version: 3
+  css_include: "www/webserver-v3.min.css"
+  js_include: "www/pixel-stars.js"
+#  js_include: "www/moving-particles.js"
+#  js_include: "www/shooting-stars.js"
+  auth:
+    username: !secret web_server_username
+    password: !secret web_server_password
+  sorting_groups:
+    - id: sorting_group_sensors
+      name: "Sensors"
+      sorting_weight: 1
+    - id: sorting_group_settings
+      name: "Settings"
+      sorting_weight: 2
+    - id: sorting_group_diagnostic
+      name: "Diagnostic"
+      sorting_weight: 3
+    - id: sorting_group_system
+      name: "System Management"
+      sorting_weight: 4
+      

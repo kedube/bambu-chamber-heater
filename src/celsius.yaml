@@ -1,0 +1,118 @@
+#
+# Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers using the 
+# ESP8285 (XY-WFPOW) microcontroller. Designed to work with Bambu 3D Printers as a chamber heater controller.
+# Copyright (C) 2026    Katherine Dubé
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+substitutions:
+  temp_unit: "Celsius"
+  temp_unit_label: "°C"
+
+number:  
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Low Temp Threshold"
+    address: 0x0006
+    register_type: holding
+    value_type: S_WORD
+    unit_of_measurement: "${temp_unit_label}"
+    min_value: 0
+    max_value: 85
+    step: 0.1
+    mode: box
+    entity_category: config
+    lambda: "return x * 0.1f;" 
+    write_lambda: "return (int16_t) lroundf(x * 10.0f);"
+    id: temp_threshold_start
+    icon: "mdi:temperature-low"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "High Temp Threshold"
+    address: 0x0007
+    register_type: holding
+    value_type: S_WORD
+    unit_of_measurement: "${temp_unit_label}"
+    min_value: 0
+    max_value: 85
+    step: 0.1
+    mode: box
+    entity_category: config
+    lambda: "return x * 0.1f;" 
+    write_lambda: "return (int16_t) lroundf(x * 10.0f);"
+    id: temp_threshold_stop
+    icon: "mdi:temperature-high"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "High Temp Alarm"
+    address: 0x0008
+    register_type: holding
+    value_type: S_WORD
+    unit_of_measurement: "${temp_unit_label}"
+    min_value: -40
+    max_value: 110
+    step: 0.1
+    mode: box
+    entity_category: config
+    lambda: "return x * 0.1f;" 
+    write_lambda: "return (int16_t) lroundf(x * 10.0f);"
+    id: high_temp_alarm
+    icon: "mdi:temperature-chevron-up"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Low Temp Alarm"
+    address: 0x0009
+    register_type: holding
+    value_type: S_WORD
+    unit_of_measurement: "${temp_unit_label}"
+    min_value: -40
+    max_value: 110
+    step: 0.1
+    mode: box
+    entity_category: config
+    lambda: "return x * 0.1f;" 
+    write_lambda: "return (int16_t) lroundf(x * 10.0f);"
+    id: low_temp_alarm
+    icon: "mdi:thermometer-chevron-down"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Temp Offset"
+    address: 0x000B
+    register_type: holding
+    value_type: S_WORD
+    unit_of_measurement: "${temp_unit_label}"
+    min_value: -10
+    max_value: 10
+    step: 0.1
+    mode: box
+    entity_category: config
+    lambda: "return x * 0.1f;" 
+    write_lambda: "return (int16_t) lroundf(x * 10.0f);"
+    id: temp_offset
+    icon: "mdi:temperature-plus"
+    web_server:
+      sorting_group_id: sorting_group_settings
