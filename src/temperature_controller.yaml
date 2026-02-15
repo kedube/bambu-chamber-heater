@@ -24,7 +24,16 @@ substitutions:
   modbus_slave_address: "0x1"
   modbus_update_interval: "10s"
   temp_multiplier: "0.1"
-  sw_version: "1.3"
+  temp_read_lambda: "return x * 0.1f;"
+  temp_write_lambda: "return (int16_t) lroundf(x * 10.0f);"
+  # Maximum safe temperature rise rate (degrees per second) - exceeding this triggers emergency stop
+  max_temp_rise_rate: "0.5"
+  sw_version: "1.4"
+  pla_temp: "22"
+  petg_temp: "40"
+  abs_temp: "60"
+  asa_temp: "65"
+  nylon_temp: "70"
 
 globals:
   - id: restart_confirmed
@@ -35,6 +44,26 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  - id: last_temp_update_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: comms_fault_latched
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: last_valid_temp
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: emergency_stop_timestamp
+    type: unsigned long
+    restore_value: no
+    initial_value: '0'
+  - id: modbus_error_count
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
 
 packages:
   select_units: !include 
@@ -55,6 +84,18 @@ script:
             - select.set:
                 id: set_temperature_unit
                 option: "${temp_unit}"
+  - id: restart_confirm_timeout
+    mode: restart
+    then:
+      - delay: 10s
+      - if:
+          condition:
+            lambda: "return id(restart_confirmed);"
+          then:
+            - logger.log:
+                format: "Restart confirmation timed out"
+                level: INFO
+            - switch.turn_off: restart_confirmation
 
 esp8266:
   board: esp8285
@@ -76,7 +117,7 @@ esphome:
   #  upload_protocol: espota
 
 logger:
-  level: DEBUG
+  level: INFO
   # Log Levels: NONE, ERROR, WARN, INFO, DEBUG, VERBOSE, VERY_VERBOSE
   # Disable logging via UART, since we're using this for modbus communication
   baud_rate: 0 #Serial logging can be disabled by setting baud_rate: 0.
@@ -137,6 +178,56 @@ uart:
               UARTDebug::log_hex(direction, bytes, ' '); // Verbose Hex
             } 
 
+# ========================================
+# MODBUS REGISTER MAP - Sinilink XY-SA/ST
+# ========================================
+#
+# Register addresses for XY-SA/ST temperature controller
+# All registers are 16-bit holding registers unless otherwise noted
+# Temperature values use signed words (S_WORD) with 0.1 multiplier
+#
+# ADDRESS | TYPE   | NAME                    | RANGE/VALUES        | DESCRIPTION
+# --------|--------|-------------------------|---------------------|------------------------------------------
+# 0x0000  | U_WORD | Controller Status       | 0=Stopped, 1=Active | Main relay/controller state
+# 0x0001  | U_WORD | Temp Sensor Status      | 0=Connected, 1=Disc | Temperature sensor connection status
+# 0x0002  | U_WORD | Delay Time Remaining    | 0-999 seconds       | Countdown timer for delayed start
+# 0x0003  | S_WORD | Current Temperature     | -400 to 1100 (*0.1) | Current measured temperature
+# 0x0004  | U_WORD | Temperature Unit        | 0=Celsius, 1=Fahr   | Display and control temperature unit
+# 0x0005  | U_WORD | Controller Mode         | 0=Heating, 1=Cooling| Operating mode (heating vs cooling)
+# 0x0006  | S_WORD | Low Temp Threshold      | -400 to 850 (*0.1)  | Temperature to start heating/cooling
+# 0x0007  | S_WORD | High Temp Threshold     | -400 to 850 (*0.1)  | Temperature to stop heating/cooling
+# 0x0008  | S_WORD | High Temp Alarm         | -400 to 1100 (*0.1) | High temperature alarm threshold
+# 0x0009  | S_WORD | Low Temp Alarm          | -400 to 1100 (*0.1) | Low temperature alarm threshold
+# 0x000A  | U_WORD | Delay Start Time        | 0-999 seconds       | Delay start duration setting
+# 0x000B  | S_WORD | Temperature Offset      | -100 to 100 (*0.1)  | Temperature calibration offset
+# 0x000C  | BOOL   | Alarm Active            | 0=No, 1=Yes         | Temperature alarm status (read-only)
+# 0x000D  | BOOL   | Alarm Sound             | 0=Off, 1=On         | Enable/disable alarm beeper
+# 0x000E  | BOOL   | High Temp Alarm Enable  | 0=Off, 1=On         | Enable high temperature alarm
+# 0x000F  | BOOL   | Low Temp Alarm Enable   | 0=Off, 1=On         | Enable low temperature alarm
+# 0x0010  | BOOL   | Delay Start Enable      | 0=Off, 1=On         | Enable delayed start feature
+# 0x0011  | BOOL   | Emergency Stop          | 0=Off, 1=On         | Emergency stop/disable controller
+# 0x0012  | U_WORD | Modbus Address          | 1-247               | Modbus slave address (requires reboot)
+# 0x0013  | U_WORD | Modbus Baudrate         | See baudrate map    | Serial communication speed
+# 0x0014  | BOOL   | Sleep Mode              | 0=Off, 1=On         | Display sleep/power saving mode
+# 0x0015  | U_WORD | Backlight Level         | 0-7                 | Display backlight brightness (0=off)
+#
+# Baudrate Map (0x0013):
+#   0=9600, 1=14400, 2=19200, 3=38400, 4=56000, 5=57600, 6=115200
+#
+# Temperature Value Encoding:
+#   - Stored as signed 16-bit integers representing temperature in tenths of degrees
+#   - Actual temperature = register_value * 0.1
+#   - Example: register value 235 = 23.5°C
+#
+# Safety Notes:
+#   - Always enable high temp alarm (0x000E) for safety
+#   - Set high temp alarm (0x0008) above normal operating range
+#   - Emergency stop (0x0011) immediately disables heating/cooling
+#   - Monitor sensor status (0x0001) for disconnection events
+#   - Communication timeout (>90s) triggers automatic emergency stop
+#
+# ========================================
+
 modbus:
   send_wait_time: 1s
   uart_id: uart_bus
@@ -150,6 +241,7 @@ modbus_controller:
     modbus_id: modbus1
     setup_priority: -10
     update_interval: ${modbus_update_interval}
+    command_throttle: 300ms
 
 sensor:
   - platform: modbus_controller
@@ -180,17 +272,56 @@ sensor:
       - multiply: ${temp_multiplier}
     on_value:
       then:
+        - lambda: |-
+            uint32_t now = millis();
+            id(last_temp_update_ms) = now;
+            id(comms_fault_latched) = false;
+
+            // Rate of change detection (runaway heating protection)
+            if (id(last_valid_temp) != 0.0f) {
+              float temp_delta = x - id(last_valid_temp);
+              float time_delta_sec = 10.0f; // Update interval in seconds
+              float temp_rate = temp_delta / time_delta_sec;
+
+              if (temp_rate > ${max_temp_rise_rate}) {
+                if (!id(emergency_stop).state) {
+                  id(emergency_stop_timestamp) = now;
+                  ESP_LOGE("safety",
+                    "EMERGENCY: Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
+                    temp_rate, "${temp_unit_label}", "${temp_unit_label}");
+                }
+              }
+            }
+            id(last_valid_temp) = x;
         - if:
             condition:
-              lambda: "return x > id(high_temp_alarm).state;"
+              lambda: "return id(over_temp_shutoff).state && x > id(high_temp_alarm).state;"
             then:
               - switch.turn_on: emergency_stop
               - lambda: |-
+                  id(emergency_stop_timestamp) = millis();
                   ESP_LOGE("safety",
                     "EMERGENCY: Temperature %.1f%s exceeds High Temperature Alarm: %.1f%s",
                     id(current_temperature).state,
                     "${temp_unit_label}",
                     id(high_temp_alarm).state,
+                    "${temp_unit_label}"
+                  );
+        - if:
+            condition:
+              lambda: |-
+                return id(over_temp_shutoff).state &&
+                       id(controller_status).state == "Active" &&
+                       x < id(low_temp_alarm).state;
+            then:
+              - switch.turn_on: emergency_stop
+              - lambda: |-
+                  id(emergency_stop_timestamp) = millis();
+                  ESP_LOGE("safety",
+                    "EMERGENCY: Temperature %.1f%s below Low Temperature Alarm: %.1f%s (possible sensor failure)",
+                    id(current_temperature).state,
+                    "${temp_unit_label}",
+                    id(low_temp_alarm).state,
                     "${temp_unit_label}"
                   );
     id: current_temperature
@@ -206,6 +337,19 @@ sensor:
     update_interval: 60s
     id: wifi_signal_strength
     icon: "mdi:wifi-strength-3"
+    web_server:
+      sorting_group_id: sorting_group_diagnostic
+
+  - platform: template
+    name: "Modbus Error Count"
+    entity_category: diagnostic
+    id: modbus_error_count_sensor
+    icon: "mdi:alert-octagon"
+    unit_of_measurement: "errors"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    lambda: |-
+      return id(modbus_error_count);
     web_server:
       sorting_group_id: sorting_group_diagnostic
 
@@ -259,6 +403,20 @@ text_sensor:
       if (v == 0) return std::string("Connected");
       if (v == 1) return std::string("Disconnected");
       return std::string("Unknown");
+    on_value:
+      then:
+        - if:
+            condition:
+              lambda: "return x == \"Disconnected\";"
+            then:
+              - if:
+                  condition:
+                    lambda: "return !id(emergency_stop).state;"
+                  then:
+                    - switch.turn_on: emergency_stop
+              - lambda: |-
+                  id(emergency_stop_timestamp) = millis();
+                  ESP_LOGE("safety", "EMERGENCY: Temperature sensor disconnected, forcing emergency stop");
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -349,6 +507,25 @@ text_sensor:
     web_server:
       sorting_group_id: sorting_group_diagnostic
 
+  - platform: template
+    name: "Emergency Stop Time"
+    entity_category: diagnostic
+    id: emergency_stop_time_sensor
+    icon: "mdi:clock-alert"
+    lambda: |-
+      if (id(emergency_stop_timestamp) == 0) {
+        return std::string("Not Active");
+      }
+      unsigned long elapsed_sec = (millis() - id(emergency_stop_timestamp)) / 1000;
+      unsigned long minutes = elapsed_sec / 60;
+      unsigned long seconds = elapsed_sec % 60;
+      char buffer[32];
+      sprintf(buffer, "%lu min %lu sec ago", minutes, seconds);
+      return std::string(buffer);
+    update_interval: 5s
+    web_server:
+      sorting_group_id: sorting_group_system
+
 number:
   - platform: modbus_controller
     modbus_controller_id: modbus_device
@@ -436,6 +613,57 @@ select:
     web_server:
       sorting_group_id: sorting_group_settings
 
+  - platform: template
+    name: "Filament Temp Preset"
+    optimistic: true
+    options:
+      - "Off"
+      - "PLA"
+      - "PETG"
+      - "ABS"
+      - "ASA"
+      - "Nylon"
+      - "User-defined"
+    initial_option: "User-defined"
+    on_value:
+      then:
+        - lambda: |-
+            if (x == "Off") {
+              id(emergency_stop).turn_on();
+              ESP_LOGI("preset", "Emergency stop activated");
+              return;
+            }
+            
+            if (x == "User-defined") {
+              ESP_LOGI("preset", "User-defined mode selected");
+              return;
+            }
+            
+            // Look up the preset from the global map
+            auto it = id(filament_presets).find(x);
+            if (it != id(filament_presets).end()) {
+              float temp_start = it->second.first;
+              float temp_stop = it->second.second;
+              
+              auto call_start = id(temp_threshold_start).make_call();
+              call_start.set_value(temp_start);
+              call_start.perform();
+              
+              auto call_stop = id(temp_threshold_stop).make_call();
+              call_stop.set_value(temp_stop);
+              call_stop.perform();
+              
+              ESP_LOGI("preset", "%s mode set (%.1f${temp_unit_label} - %.1f${temp_unit_label})",
+                       x.c_str(), temp_start, temp_stop);
+            } else {
+              ESP_LOGW("preset", "Preset '%s' not found in filament_presets", x.c_str());
+            }
+    entity_category: config
+    id: filament_temp_preset
+    icon: "mdi:thermometer-lines"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
 switch: 
   - platform: modbus_controller
     modbus_controller_id: modbus_device
@@ -494,10 +722,14 @@ switch:
     id: emergency_stop
     icon: "mdi:car-brake-alert"
     on_turn_on:
+      - lambda: |-
+          id(emergency_stop_timestamp) = millis();
       - logger.log:
           format: "Emergency stopped enabled"
           level: INFO
     on_turn_off:
+      - lambda: |-
+          id(emergency_stop_timestamp) = 0;
       - logger.log:
           format: "Emergency stopped disabled"
           level: INFO
@@ -516,17 +748,38 @@ switch:
     web_server:
       sorting_group_id: sorting_group_settings
 
-  # Log Level DEBUG must be defined
+  - platform: template
+    name: "Over Temp Shutoff"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    turn_on_action:
+      then:
+        - logger.log:
+            format: "Over temp shutoff enabled"
+            level: INFO
+    turn_off_action:
+      then:
+        - logger.log:
+            format: "Over temp shutoff disabled"
+            level: INFO
+    id: over_temp_shutoff
+    icon: "mdi:car-brake-temperature"
+    web_server:
+      sorting_group_id: sorting_group_system
+
+  # Raises logger level to DEBUG only while this switch is enabled.
   - platform: template
     name: "Modbus Debugging"
     optimistic: true
     turn_on_action:
       then:
+        - logger.set_level: DEBUG
         - lambda: |-
             id(modbus_debugging) = true;
             ESP_LOGI("switch", "Modbus Debugging enabled");
     turn_off_action:
       then:
+        - logger.set_level: INFO
         - lambda: |-
             id(modbus_debugging) = false;
             ESP_LOGI("switch", "Modbus Debugging disabled");
@@ -543,19 +796,16 @@ switch:
       - globals.set:
           id: restart_confirmed
           value: 'true'
-      - delay: 10s
-      - logger.log:
-          format: "Restart timed out"
-          level: INFO
-      - switch.turn_off: restart_confirmation
+      - script.execute: restart_confirm_timeout
     turn_off_action:
+      - script.stop: restart_confirm_timeout
       - globals.set:
           id: restart_confirmed
           value: 'false'
     id: restart_confirmation
     icon: "mdi:shield-check-outline"
     web_server:
-      sorting_group_id: sorting_group_system        
+      sorting_group_id: sorting_group_system
 
 button:
   - platform: template
@@ -583,6 +833,26 @@ button:
     name: "Internal Restart"
     id: internal_restart
     internal: true
+
+interval:
+  - interval: 30s
+    then:
+      - if:
+          condition:
+            lambda: |-
+              if (id(comms_fault_latched)) return false;
+              if (id(last_temp_update_ms) == 0) return false;
+              return (millis() - id(last_temp_update_ms)) > 90000UL;
+          then:
+            - lambda: |-
+                id(comms_fault_latched) = true;
+                id(emergency_stop_timestamp) = millis();
+                ESP_LOGE("safety", "EMERGENCY: Temperature telemetry stale for >90s, forcing emergency stop");
+            - if:
+                condition:
+                  lambda: "return !id(emergency_stop).state;"
+                then:
+                  - switch.turn_on: emergency_stop
     
 web_server:
   port: 80

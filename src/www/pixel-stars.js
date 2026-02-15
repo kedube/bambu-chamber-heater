@@ -27,21 +27,25 @@
     style.textContent = `
         html {
             height: 100%;
-            overflow: hidden;
+            overflow: auto;
         }
 
         body {
             margin: 0;
             padding: 0;
-            height: 100%;
+            min-height: 100%;
+            position: relative;
         }
 
         #stars {
+            position: fixed;
             width: 1px;
             height: 1px;
             background: transparent;
             box-shadow: ${shadowsSmall};
             animation: animStar 50s linear infinite;
+            z-index: -1;
+            pointer-events: none;
         }
 
         #stars:after {
@@ -55,11 +59,14 @@
         }
 
         #stars2 {
+            position: fixed;
             width: 2px;
             height: 2px;
             background: transparent;
             box-shadow: ${shadowsMedium};
             animation: animStar 100s linear infinite;
+            z-index: -1;
+            pointer-events: none;
         }
 
         #stars2:after {
@@ -73,11 +80,14 @@
         }
 
         #stars3 {
+            position: fixed;
             width: 3px;
             height: 3px;
             background: transparent;
             box-shadow: ${shadowsBig};
             animation: animStar 150s linear infinite;
+            z-index: -1;
+            pointer-events: none;
         }
 
         #stars3:after {
