@@ -60,10 +60,6 @@ globals:
     type: unsigned long
     restore_value: no
     initial_value: '0'
-  - id: modbus_error_count
-    type: uint32_t
-    restore_value: no
-    initial_value: '0'
 
 packages:
   select_units: !include 
@@ -337,19 +333,6 @@ sensor:
     update_interval: 60s
     id: wifi_signal_strength
     icon: "mdi:wifi-strength-3"
-    web_server:
-      sorting_group_id: sorting_group_diagnostic
-
-  - platform: template
-    name: "Modbus Error Count"
-    entity_category: diagnostic
-    id: modbus_error_count_sensor
-    icon: "mdi:alert-octagon"
-    unit_of_measurement: "errors"
-    state_class: total_increasing
-    accuracy_decimals: 0
-    lambda: |-
-      return id(modbus_error_count);
     web_server:
       sorting_group_id: sorting_group_diagnostic
 
@@ -858,9 +841,9 @@ web_server:
   port: 80
   version: 3
   css_include: "www/webserver-v3.min.css"
-  js_include: "www/pixel-stars.js"
+#  js_include: "www/pixel-stars.js"
 #  js_include: "www/moving-particles.js"
-#  js_include: "www/shooting-stars.js"
+  js_include: "www/shooting-stars.js"
   auth:
     username: !secret web_server_username
     password: !secret web_server_password
