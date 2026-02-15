@@ -99,14 +99,24 @@ cp secrets-example.yaml secrets.yaml
 
 Configurable settings:
 ```
+# Update the following secrets with your own values.
+location_name: "Office"
 wifi_ssid: ""
 wifi_password: ""
-wifi_default_ssid: "bambu-chamber-heater"
-wifi_default_password: ""
+ap_wifi_ssid: "chamber-heater"
+ap_wifi_password: ""
 web_server_username: "admin"
 web_server_password: ""
 ota_password: ""
+# Generate a random 32-byte encryption key for the API and paste it here or visit https://esphome.io/components/api/ to generate one. 
+# This is required if you want to use integrate with Home Assistant.
 encryption_key: ""
+# Static IP configuration (uncomment and set values if needed)
+#static_ip: ""
+#gateway: ""
+#subnet: ""
+#dns1: ""
+#dns2: ""
 ```
 
 Generate a valid 32-byte encryption key (see: [ESPHome.io](https://esphome.io/components/api/)), and insert it under `encryption_key`.
