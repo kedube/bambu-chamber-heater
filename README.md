@@ -8,9 +8,14 @@ This project allows you to intelligently manage your chamber heater by turning i
 
 ## Features
 - Remote control of chamber heater via ESPHome integration
-- Supports automation scripting using Home Assistant
-- OTA (Over-The-Air) firmware update
+- Enable automation scripting using Home Assistant
 - Web server interface with customizable UI and remote monitoring
+- Overtemp shutoff if the temperature exceeds the high temp alarm
+- Heater shutoff if the temperature is rising too fast
+- Configurable Celsius or Fahrenheit temperature units
+- Support for temperature offsets
+- User-defined or pre-defined filament temperature presets
+- OTA (Over-The-Air) firmware update
 
 ## Requirements
 Make sure you have the following before proceeding:
