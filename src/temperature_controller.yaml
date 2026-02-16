@@ -841,9 +841,9 @@ web_server:
   port: 80
   version: 3
   css_include: "www/webserver-v3.min.css"
-#  js_include: "www/pixel-stars.js"
+  js_include: "www/pixel-stars.js"
 #  js_include: "www/moving-particles.js"
-  js_include: "www/shooting-stars.js"
+#  js_include: "www/shooting-stars.js"
   auth:
     username: !secret web_server_username
     password: !secret web_server_password

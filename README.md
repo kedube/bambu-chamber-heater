@@ -3,7 +3,7 @@ ESPHome implementation to remotely control Sinilink **XY-SA/ST series temperatur
 
 This project allows you to intelligently manage your chamber heater by turning it on/off automatically, linking it with print jobs, and controlling it with automation scripts. Inspired by the [BambuSauna project](https://makerworld.com/en/models/539096-bambusauna-bambulab-x1c-p1p-p1s-chamber-heater).  
 
-![Alt screenshot](images/bambusauna.jpeg)
+![Alt screenshot](images/bambusauna-1.jpeg)
 ![Alt screenshot](images/sinilink_temperature_controller.jpeg)
 
 ## Features
@@ -67,6 +67,7 @@ Safety Notes:
 ## Wiring Diagram
 Here is a basic wiring diagram for AC-powered Sinilink XY-SA Series Temperature Controllers. The Sinilink XY-ST Series Temperature Controllers are DC-powered and require an external 24V power supply and entirely different wiring schematic. 
 
+![Alt screenshot](images/bambusauna-2.jpeg)
 ![Alt Wiring Diagram](images/bambusauna_wiring_diagram.png)
 
 Disclaimer: The author assumes no liability for any injury, damage, or loss resulting from wiring errors, improper installation, or misuse of this project. Electrical work can be hazardous—if you are unsure, consult a qualified professional before proceeding.
