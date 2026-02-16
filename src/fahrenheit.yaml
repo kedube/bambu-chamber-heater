@@ -19,7 +19,7 @@
 
 substitutions:
   temp_unit: "Fahrenheit"
-  temp_unit_label: "\u00B0F"
+  temp_unit_label: "°F"
 
 globals:
   - id: filament_presets
