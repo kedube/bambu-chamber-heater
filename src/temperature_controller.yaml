@@ -28,7 +28,7 @@ substitutions:
   temp_write_lambda: "return (int16_t) lroundf(x * 10.0f);"
   # Maximum safe temperature rise rate (degrees per second) - exceeding this triggers emergency stop
   max_temp_rise_rate: "0.5"
-  sw_version: "1.4"
+  sw_version: "1.4.1"
   pla_temp: "22"
   petg_temp: "40"
   abs_temp: "60"
