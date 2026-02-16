@@ -44,11 +44,11 @@ Register addresses for XY-SA/ST temperature controller. All registers are 16-bit
 | ADDRESS | TYPE   | NAME                    | RANGE/VALUES        | Read/Write | DESCRIPTION
 | :---|:---:|:---|:---|:---:|:---
 | 0x0000  | U_WORD | Controller Status       | 0=Stopped, 1=Active | RW | Main relay/controller state
-| 0x0001  | U_WORD | Temp Sensor Status      | 0=Connected, 1=Disc | R | Temperature sensor connection status
-| 0x0002  | U_WORD | Delay Time Remaining    | 0-999 seconds       | R | Countdown timer for delayed start
-| 0x0003  | S_WORD | Current Temperature     | -400 to 1100 (*0.1) | R | Current measured temperature
+| 0x0001  | U_WORD | Temp Sensor Status      | 0=Connected, 1=Disc | RO | Temperature sensor connection status
+| 0x0002  | U_WORD | Delay Time Remaining    | 0-999 seconds       | RO | Countdown timer for delayed start
+| 0x0003  | S_WORD | Current Temperature     | -400 to 1100 (*0.1) | RO | Current measured temperature
 | 0x0004  | U_WORD | Temperature Unit        | 0=Celsius, 1=Fahrenheit | RW | Display and control temperature unit
-| 0x0005  | U_WORD | Controller Mode         | 0=Heating, 1=Cooling| R | Operating mode (heating vs cooling)
+| 0x0005  | U_WORD | Controller Mode         | 0=Heating, 1=Cooling| RO | Operating mode (heating vs cooling)
 | 0x0006  | S_WORD | Low Temp Threshold      | -400 to 850 (*0.1)  | RW | Temperature to start heating/cooling
 | 0x0007  | S_WORD | High Temp Threshold     | -400 to 850 (*0.1)  | RW | Temperature to stop heating/cooling
 | 0x0008  | S_WORD | High Temp Alarm         | -400 to 1100 (*0.1) | RW | High temperature alarm threshold
