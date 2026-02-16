@@ -20,7 +20,7 @@
 substitutions:
   device_name: "chamber-heater"
   friendly_name: "Chamber Heater Controller"
-  device_description: "ESP8285-based Modbus controller for Sinilink XY-SA/ST temperature controllers used as a chamber heater controller for Bambu 3D printers."
+  device_description: "ESP8285-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
   baud_rate: "115200"
   modbus_slave_address: "0x1"
   modbus_update_interval: "10s"
@@ -29,7 +29,7 @@ substitutions:
   temp_write_lambda: "return (int16_t) lroundf(x * 10.0f);"
   # Maximum safe temperature rise rate (degrees per second) - exceeding this triggers emergency stop
   max_temp_rise_rate: "0.5"
-  sw_version: "1.4.1"
+  sw_version: "1.4.2"
   pla_temp: "22"
   petg_temp: "40"
   abs_temp: "60"
@@ -502,11 +502,34 @@ text_sensor:
         return std::string("Not Active");
       }
       unsigned long elapsed_sec = (millis() - id(emergency_stop_timestamp)) / 1000;
-      unsigned long minutes = elapsed_sec / 60;
-      unsigned long seconds = elapsed_sec % 60;
-      char buffer[32];
-      sprintf(buffer, "%lu min %lu sec ago", minutes, seconds);
-      return std::string(buffer);
+
+      // Calculate time components
+      unsigned long years = elapsed_sec / (365UL * 24 * 3600);
+      unsigned long remaining = elapsed_sec % (365UL * 24 * 3600);
+
+      unsigned long months = remaining / (30UL * 24 * 3600);  // Approximate 30 days per month
+      remaining %= (30UL * 24 * 3600);
+
+      unsigned long days = remaining / (24UL * 3600);
+      remaining %= (24UL * 3600);
+
+      unsigned long hours = remaining / 3600;
+      remaining %= 3600;
+
+      unsigned long minutes = remaining / 60;
+      unsigned long seconds = remaining % 60;
+
+      // Build the output string dynamically, only including non-zero values
+      std::string result = "";
+      if (years > 0) result += std::to_string(years) + "y ";
+      if (months > 0) result += std::to_string(months) + "mo ";
+      if (days > 0) result += std::to_string(days) + "d ";
+      if (hours > 0) result += std::to_string(hours) + "h ";
+      if (minutes > 0) result += std::to_string(minutes) + "m ";
+      if (seconds > 0 || result.empty()) result += std::to_string(seconds) + "s ";
+
+      result += "ago";
+      return result;
     update_interval: 5s
     web_server:
       sorting_group_id: sorting_group_system
