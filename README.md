@@ -7,15 +7,24 @@ This project allows you to intelligently manage your chamber heater by turning i
 ![Alt screenshot](images/sinilink_temperature_controller.jpeg)
 
 ## Features
-- Remote control of chamber heater via ESPHome integration
-- Enable automation scripting using Home Assistant
-- Web server interface with customizable UI and remote monitoring
-- Overtemp shutoff if the temperature exceeds the high temp alarm
-- Heater shutoff if the temperature is rising too fast
-- Configurable Celsius or Fahrenheit temperature units
-- Support for temperature offsets
-- User-defined or pre-defined filament temperature presets
-- OTA (Over-The-Air) firmware update
+
+### Control & Automation
+- **ESPHome Integration** - Seamless remote control and monitoring through Home Assistant
+- **Web Interface** - Standalone web server with customizable UI for direct device access
+- **Smart Automation** - Script temperature control based on print jobs, filament types, or custom conditions
+- **Filament Presets** - Pre-configured temperature profiles for PLA, PETG, ABS, ASA, and Nylon, plus user-defined settings
+
+### Safety & Protection
+- **Emergency Stop** - Instant heater shutdown via manual override or automated triggers
+- **Over-Temperature Protection** - Automatic shutoff when temperature exceeds high alarm threshold
+- **Runaway Heating Detection** - Monitors temperature rise rate and triggers emergency stop on anomalies
+- **Sensor Fault Detection** - Automatic emergency stop on temperature sensor disconnection
+- **Communication Watchdog** - Auto-shutoff if Modbus communication is lost for >90 seconds
+
+### Configuration
+- **Dual Unit Support** - Switch between Celsius and Fahrenheit temperature units
+- **Temperature Calibration** - Adjustable temperature offset for sensor accuracy
+- **OTA Firmware Updates** - Wireless updates without physical access to the device
 
 ## Requirements
 Make sure you have the following before proceeding:
