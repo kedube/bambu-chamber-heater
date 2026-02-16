@@ -20,6 +20,7 @@
 substitutions:
   device_name: "chamber-heater"
   friendly_name: "Chamber Heater Controller"
+  device_description: "ESP8285-based Modbus controller for Sinilink XY-SA/ST temperature controllers used as a chamber heater controller for Bambu 3D printers."
   baud_rate: "115200"
   modbus_slave_address: "0x1"
   modbus_update_interval: "10s"
@@ -102,6 +103,7 @@ esp8266:
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
+  comment: ${device_description}
   area: !secret location_name
   on_boot: 
     priority: 200
