@@ -55,7 +55,7 @@ Register addresses for XY-SA/ST temperature controller. All registers are 16-bit
 | 0x0009  | S_WORD | Low Temp Alarm          | -400 to 1100 (*0.1) | RW | Low temperature alarm threshold
 | 0x000A  | U_WORD | Delay Start Time        | 0-999 seconds       | RW | Delay start duration setting
 | 0x000B  | S_WORD | Temperature Offset      | -100 to 100 (*0.1)  | RW | Temperature calibration offset
-| 0x000C  | BOOL   | Alarm Active            | 0=No, 1=Yes         | RW | Temperature alarm status (read-only)
+| 0x000C  | BOOL   | Alarm Active            | 0=No, 1=Yes         | RO | Temperature alarm status
 | 0x000D  | BOOL   | Alarm Sound             | 0=Off, 1=On         | RW | Enable/disable alarm beeper
 | 0x000E  | BOOL   | High Temp Alarm Enable  | 0=Off, 1=On         | RW | Enable high temperature alarm
 | 0x000F  | BOOL   | Low Temp Alarm Enable   | 0=Off, 1=On         | RW | Enable low temperature alarm
