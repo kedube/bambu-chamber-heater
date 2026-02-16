@@ -32,30 +32,30 @@ Make sure you have the following before proceeding:
 ## Modbus Address Map
 Register addresses for XY-SA/ST temperature controller. All registers are 16-bit holding registers unless otherwise noted. Temperature values use signed words (S_WORD) that require a 0.1 multiplier when displaying.
 
-| ADDRESS | TYPE   | NAME                    | RANGE/VALUES        | DESCRIPTION
-| :---|:---:|:---|:---|:---
-| 0x0000  | U_WORD | Controller Status       | 0=Stopped, 1=Active | Main relay/controller state
-| 0x0001  | U_WORD | Temp Sensor Status      | 0=Connected, 1=Disc | Temperature sensor connection status
-| 0x0002  | U_WORD | Delay Time Remaining    | 0-999 seconds       | Countdown timer for delayed start
-| 0x0003  | S_WORD | Current Temperature     | -400 to 1100 (*0.1) | Current measured temperature
-| 0x0004  | U_WORD | Temperature Unit        | 0=Celsius, 1=Fahrenheit | Display and control temperature unit
-| 0x0005  | U_WORD | Controller Mode         | 0=Heating, 1=Cooling| Operating mode (heating vs cooling)
-| 0x0006  | S_WORD | Low Temp Threshold      | -400 to 850 (*0.1)  | Temperature to start heating/cooling
-| 0x0007  | S_WORD | High Temp Threshold     | -400 to 850 (*0.1)  | Temperature to stop heating/cooling
-| 0x0008  | S_WORD | High Temp Alarm         | -400 to 1100 (*0.1) | High temperature alarm threshold
-| 0x0009  | S_WORD | Low Temp Alarm          | -400 to 1100 (*0.1) | Low temperature alarm threshold
-| 0x000A  | U_WORD | Delay Start Time        | 0-999 seconds       | Delay start duration setting
-| 0x000B  | S_WORD | Temperature Offset      | -100 to 100 (*0.1)  | Temperature calibration offset
-| 0x000C  | BOOL   | Alarm Active            | 0=No, 1=Yes         | Temperature alarm status (read-only)
-| 0x000D  | BOOL   | Alarm Sound             | 0=Off, 1=On         | Enable/disable alarm beeper
-| 0x000E  | BOOL   | High Temp Alarm Enable  | 0=Off, 1=On         | Enable high temperature alarm
-| 0x000F  | BOOL   | Low Temp Alarm Enable   | 0=Off, 1=On         | Enable low temperature alarm
-| 0x0010  | BOOL   | Delay Start Enable      | 0=Off, 1=On         | Enable delayed start feature
-| 0x0011  | BOOL   | Emergency Stop          | 0=Off, 1=On         | Emergency stop/disable controller
-| 0x0012  | U_WORD | Modbus Address          | 1-247               | Modbus slave address (requires reboot)
-| 0x0013  | U_WORD | Modbus Baudrate         | 0-6 \<See baudrate map\>  | Serial communication speed
-| 0x0014  | BOOL   | Sleep Mode              | 0=Off, 1=On         | Display sleep/power saving mode
-| 0x0015  | U_WORD | Backlight Level         | 0-7                 | Display backlight brightness (0=off)
+| ADDRESS | TYPE   | NAME                    | RANGE/VALUES        | Read/Write | DESCRIPTION
+| :---|:---:|:---|:---|:---:|:---
+| 0x0000  | U_WORD | Controller Status       | 0=Stopped, 1=Active | RW | Main relay/controller state
+| 0x0001  | U_WORD | Temp Sensor Status      | 0=Connected, 1=Disc | R | Temperature sensor connection status
+| 0x0002  | U_WORD | Delay Time Remaining    | 0-999 seconds       | R | Countdown timer for delayed start
+| 0x0003  | S_WORD | Current Temperature     | -400 to 1100 (*0.1) | R | Current measured temperature
+| 0x0004  | U_WORD | Temperature Unit        | 0=Celsius, 1=Fahrenheit | RW | Display and control temperature unit
+| 0x0005  | U_WORD | Controller Mode         | 0=Heating, 1=Cooling| R | Operating mode (heating vs cooling)
+| 0x0006  | S_WORD | Low Temp Threshold      | -400 to 850 (*0.1)  | RW | Temperature to start heating/cooling
+| 0x0007  | S_WORD | High Temp Threshold     | -400 to 850 (*0.1)  | RW | Temperature to stop heating/cooling
+| 0x0008  | S_WORD | High Temp Alarm         | -400 to 1100 (*0.1) | RW | High temperature alarm threshold
+| 0x0009  | S_WORD | Low Temp Alarm          | -400 to 1100 (*0.1) | RW | Low temperature alarm threshold
+| 0x000A  | U_WORD | Delay Start Time        | 0-999 seconds       | RW | Delay start duration setting
+| 0x000B  | S_WORD | Temperature Offset      | -100 to 100 (*0.1)  | RW | Temperature calibration offset
+| 0x000C  | BOOL   | Alarm Active            | 0=No, 1=Yes         | RW | Temperature alarm status (read-only)
+| 0x000D  | BOOL   | Alarm Sound             | 0=Off, 1=On         | RW | Enable/disable alarm beeper
+| 0x000E  | BOOL   | High Temp Alarm Enable  | 0=Off, 1=On         | RW | Enable high temperature alarm
+| 0x000F  | BOOL   | Low Temp Alarm Enable   | 0=Off, 1=On         | RW | Enable low temperature alarm
+| 0x0010  | BOOL   | Delay Start Enable      | 0=Off, 1=On         | RW | Enable delayed start feature
+| 0x0011  | BOOL   | Emergency Stop          | 0=Off, 1=On         | RW | Emergency stop/disable controller
+| 0x0012  | U_WORD | Modbus Address          | 1-247               | RW | Modbus slave address (requires reboot)
+| 0x0013  | U_WORD | Modbus Baudrate         | 0-6 \<See baudrate map\>  | RW | Serial communication speed
+| 0x0014  | BOOL   | Sleep Mode              | 0=Off, 1=On         | RW | Display sleep/power saving mode
+| 0x0015  | U_WORD | Backlight Level         | 0-7                 | RW | Display backlight brightness (0=off)
 
 Baudrate Map (0x0013): 0=9600, 1=14400, 2=19200, 3=38400, 4=56000, 5=57600, 6=115200
 
