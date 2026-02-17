@@ -61,7 +61,6 @@ number:
   # Heating mode: low < high (e.g., start at 70°F, stop at 73°F)
   # Cooling mode: low > high (e.g., start at 73°F, stop at 70°F)
   # Range limited to safe operating range: 32-185°F
-
   - platform: modbus_controller
     modbus_controller_id: modbus_device
     name: "Low Temp Threshold"
@@ -108,7 +107,6 @@ number:
   # Example: If operating at 140°F, set high alarm to 158°F, low alarm to 41°F
   # Both heating and cooling modes can use these alarms for safety
   # Range: -40-230°F (controller's full measurement range)
-
   - platform: modbus_controller
     modbus_controller_id: modbus_device
     name: "High Temp Alarm"
@@ -154,7 +152,6 @@ number:
   # Positive values increase displayed temperature, negative values decrease
   # Example: If sensor reads 70°F but actual is 72°F, set offset to +2.0
   # Range: ±18°F (±10°C)
-
   - platform: modbus_controller
     modbus_controller_id: modbus_device
     name: "Temp Offset"
