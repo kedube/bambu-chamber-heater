@@ -27,9 +27,13 @@ substitutions:
   temp_multiplier: "0.1"
   temp_read_lambda: "return x * 0.1f;"
   temp_write_lambda: "return (int16_t) lroundf(x * 10.0f);"
-  # Maximum safe temperature rise rate (degrees per second) - exceeding this triggers emergency stop
+  # Maximum safe temperature rise rate (degrees per second)
+  # 0.5°C/sec = 30°C/min is reasonable for chamber heating but would indicate runaway heating
+  # Only checks RISING temperature - falling is normal when heater turns off
   max_temp_rise_rate: "0.5"
-  # Communication timeout in milliseconds - triggers emergency stop if no temp updates received
+  # Communication timeout in milliseconds (90000ms = 90s)
+  # Must be > 3x modbus_update_interval (10s) to avoid false positives
+  # Checked every 30s by interval task
   comms_timeout_ms: "90000"
   sw_version: "1.4.3"
   pla_temp: "22"
@@ -39,34 +43,47 @@ substitutions:
   nylon_temp: "70"
 
 globals:
+  # Restart confirmation flag - user must enable before restarting
   - id: restart_confirmed
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Modbus debugging flag - enables verbose UART logging when true
   - id: modbus_debugging
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Timestamp of last temperature update - used by communication watchdog
   - id: last_temp_update_ms
     type: uint32_t
     restore_value: no
     initial_value: '0'
+  # Communication fault latch - prevents duplicate error messages
   - id: comms_fault_latched
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Flag indicating if we have at least one valid temperature reading
+  # Used to prevent false rate-of-change alarms on first boot
+  # Using a flag instead of checking temp != 0.0 because 0.0°C is a valid temperature
   - id: has_last_valid_temp
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Previous temperature reading for rate-of-change calculation
+  # Initialized to 0.0 but only used when has_last_valid_temp is true
   - id: last_valid_temp
     type: float
     restore_value: no
     initial_value: '0.0'
+  # Timestamp of last temperature sample in milliseconds
+  # Used with unsigned arithmetic to handle millis() wraparound at 49.7 days
   - id: last_temp_sample_ms
     type: uint32_t
     restore_value: no
     initial_value: '0'
+  # Timestamp when first emergency condition occurred
+  # Set to 0 when emergency cleared, preserves first emergency time if multiple triggers
   - id: emergency_stop_timestamp
     type: unsigned long
     restore_value: no
@@ -80,6 +97,9 @@ packages:
     #file: fahrenheit.yaml
 
 script:
+  # Ensures controller's temperature unit matches the configured unit in this file
+  # Runs on boot to sync controller if it was changed via physical buttons
+  # Uses queued mode to handle multiple calls during startup
   - id: write_temp_unit
     mode: queued
     then:
@@ -91,10 +111,13 @@ script:
             - select.set:
                 id: set_temperature_unit
                 option: "${temp_unit}"
+  # Safety timeout for restart confirmation
+  # User must enable restart_confirmation switch within 10 seconds before pressing restart
+  # Prevents accidental restarts during operation
   - id: restart_confirm_timeout
     mode: restart
     then:
-      - delay: 10s
+      - delay: 10s  # 10 second window to confirm restart
       - if:
           condition:
             lambda: "return id(restart_confirmed);"
@@ -234,6 +257,11 @@ uart:
 #   - Monitor sensor status (0x0001) for disconnection events
 #   - Communication timeout (>90s) triggers automatic emergency stop
 #
+# IMPORTANT SAFETY CONFIGURATION:
+#   - Registers 0x0006/0x0007 (thresholds): Can have low > high in cooling mode
+#   - Registers 0x0008/0x0009 (alarms): Can have low > high in cooling mode
+#   - Always verify critical settings after modbus address or baudrate changes
+#
 # ========================================
 
 modbus:
@@ -286,7 +314,13 @@ sensor:
             id(comms_fault_latched) = false;
 
             // Rate of change detection (runaway heating protection)
+            // NOTE: Only checks for RISING temperature - this is intentional:
+            //   - Rising too fast = runaway heating (fire risk) → emergency stop
+            //   - Falling fast = heater turned off (normal) → no emergency
+            //   - Runaway cooling is caught by low_temp_alarm check below
             if (id(has_last_valid_temp) && id(last_temp_sample_ms) != 0) {
+              // Calculate actual elapsed time for accurate rate calculation
+              // Uses unsigned arithmetic which safely handles millis() wraparound
               uint32_t elapsed_ms = now - id(last_temp_sample_ms);
               float temp_delta = x - id(last_valid_temp);
               float time_delta_sec = elapsed_ms / 1000.0f;
@@ -296,6 +330,7 @@ sensor:
 
                 if (id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
                   if (!id(emergency_stop).state) {
+                    // Only set timestamp on FIRST emergency to preserve diagnostic info
                     if (id(emergency_stop_timestamp) == 0) {
                       id(emergency_stop_timestamp) = now;
                     }
@@ -310,12 +345,15 @@ sensor:
             id(last_temp_sample_ms) = now;
             id(last_valid_temp) = x;
             id(has_last_valid_temp) = true;
+        # High temperature alarm - absolute safety limit
+        # Triggers regardless of heating/cooling mode
         - if:
             condition:
               lambda: "return id(over_temp_shutoff).state && x > id(high_temp_alarm).state;"
             then:
               - switch.turn_on: emergency_stop
               - lambda: |-
+                  // Preserve first emergency timestamp for diagnostics
                   if (id(emergency_stop_timestamp) == 0) {
                     id(emergency_stop_timestamp) = millis();
                   }
@@ -326,16 +364,22 @@ sensor:
                     id(high_temp_alarm).state,
                     "${temp_unit_label}"
                   );
+        # Low temperature alarm - detects sensor failure or runaway cooling
+        # Only triggers when controller is ACTIVE (heating or cooling)
+        # When STOPPED, temp naturally falls and is not an emergency
+        # NOTE: Checks both heating AND cooling modes:
+        #   - Heating mode + low temp = heater failure or sensor fault
+        #   - Cooling mode + low temp = runaway cooling or sensor fault
         - if:
             condition:
               lambda: |-
                 return id(over_temp_shutoff).state &&
                        id(controller_status).state == "Active" &&
-                       id(controller_mode).state == "Heating" &&
                        x < id(low_temp_alarm).state;
             then:
               - switch.turn_on: emergency_stop
               - lambda: |-
+                  // Preserve first emergency timestamp for diagnostics
                   if (id(emergency_stop_timestamp) == 0) {
                     id(emergency_stop_timestamp) = millis();
                   }
@@ -418,12 +462,15 @@ text_sensor:
             condition:
               lambda: "return x == \"Disconnected\";"
             then:
+              # Sensor disconnection is critical - cannot safely operate without temperature data
+              # Force emergency stop immediately
               - if:
                   condition:
                     lambda: "return !id(emergency_stop).state;"
                   then:
                     - switch.turn_on: emergency_stop
               - lambda: |-
+                  // Preserve first emergency timestamp for diagnostics
                   if (id(emergency_stop_timestamp) == 0) {
                     id(emergency_stop_timestamp) = millis();
                   }
@@ -527,9 +574,11 @@ text_sensor:
       if (id(emergency_stop_timestamp) == 0) {
         return std::string("Not Active");
       }
+      // Calculate elapsed time since first emergency condition
+      // Uses unsigned arithmetic - safely handles millis() wraparound at ~49.7 days
       unsigned long elapsed_sec = (millis() - id(emergency_stop_timestamp)) / 1000;
 
-      // Calculate time components
+      // Calculate time components (days, hours, minutes, seconds)
       unsigned long days = elapsed_sec / (24UL * 3600);
       unsigned long remaining = elapsed_sec % (24UL * 3600);
 
@@ -655,17 +704,21 @@ select:
       then:
         - lambda: |-
             if (x == "Off") {
+              // "Off" preset triggers emergency stop to safely disable heater
               id(emergency_stop).turn_on();
               ESP_LOGI("preset", "Emergency stop activated");
               return;
             }
-            
+
             if (x == "User-defined") {
+              // User-defined mode - no automatic threshold changes
               ESP_LOGI("preset", "User-defined mode selected");
               return;
             }
-            
-            // Look up the preset from the global map
+
+            // Look up preset from global map and set thresholds
+            // Presets use ±1 degree hysteresis (e.g., PLA: 21-23°C for 22°C target)
+            // This prevents rapid on/off cycling (relay chatter)
             auto it = id(filament_presets).find(x);
             if (it != id(filament_presets).end()) {
               float temp_start = it->second.first;
@@ -749,6 +802,8 @@ switch:
     icon: "mdi:car-brake-alert"
     on_turn_on:
       - lambda: |-
+          // Set timestamp only if not already set
+          // Preserves time of first emergency if multiple conditions trigger
           if (id(emergency_stop_timestamp) == 0) {
             id(emergency_stop_timestamp) = millis();
           }
@@ -757,6 +812,8 @@ switch:
           level: INFO
     on_turn_off:
       - lambda: |-
+          // Clear timestamp when emergency is manually cleared
+          // Allows new emergency events to be tracked
           id(emergency_stop_timestamp) = 0;
       - logger.log:
           format: "Emergency stopped disabled"
@@ -863,17 +920,25 @@ button:
     internal: true
 
 interval:
+  # Communication watchdog - monitors for stale temperature data
+  # Checks every 30 seconds if temperature updates are being received
+  # Triggers emergency stop if no updates for comms_timeout_ms (90s)
   - interval: 30s
     then:
       - if:
           condition:
             lambda: |-
+              // Skip if already latched to avoid duplicate log messages
               if (id(comms_fault_latched)) return false;
+              // Skip if no temperature readings received yet (initial state)
               if (id(last_temp_update_ms) == 0) return false;
+              // Check if time since last update exceeds timeout threshold
+              // Unsigned arithmetic handles millis() wraparound correctly
               return (millis() - id(last_temp_update_ms)) > ${comms_timeout_ms}UL;
           then:
             - lambda: |-
                 id(comms_fault_latched) = true;
+                // Preserve first emergency timestamp for diagnostics
                 if (id(emergency_stop_timestamp) == 0) {
                   id(emergency_stop_timestamp) = millis();
                 }
