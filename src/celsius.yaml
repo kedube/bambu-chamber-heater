@@ -108,7 +108,7 @@ number:
     lambda: "${temp_read_lambda}"
     write_lambda: "${temp_write_lambda}"
     id: low_temp_alarm
-    icon: "mdi:thermometer-chevron-down"
+    icon: "mdi:temperature-chevron-down"
     web_server:
       sorting_group_id: sorting_group_settings
 

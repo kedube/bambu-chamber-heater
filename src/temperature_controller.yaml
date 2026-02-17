@@ -29,7 +29,9 @@ substitutions:
   temp_write_lambda: "return (int16_t) lroundf(x * 10.0f);"
   # Maximum safe temperature rise rate (degrees per second) - exceeding this triggers emergency stop
   max_temp_rise_rate: "0.5"
-  sw_version: "1.4.2"
+  # Communication timeout in milliseconds - triggers emergency stop if no temp updates received
+  comms_timeout_ms: "90000"
+  sw_version: "1.4.3"
   pla_temp: "22"
   petg_temp: "40"
   abs_temp: "60"
@@ -53,10 +55,18 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  - id: has_last_valid_temp
+    type: bool
+    restore_value: no
+    initial_value: 'false'
   - id: last_valid_temp
     type: float
     restore_value: no
     initial_value: '0.0'
+  - id: last_temp_sample_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
   - id: emergency_stop_timestamp
     type: unsigned long
     restore_value: no
@@ -115,7 +125,7 @@ esphome:
   #  upload_protocol: espota
 
 logger:
-  level: INFO
+  level: DEBUG
   # Log Levels: NONE, ERROR, WARN, INFO, DEBUG, VERBOSE, VERY_VERBOSE
   # Disable logging via UART, since we're using this for modbus communication
   baud_rate: 0 #Serial logging can be disabled by setting baud_rate: 0.
@@ -276,28 +286,39 @@ sensor:
             id(comms_fault_latched) = false;
 
             // Rate of change detection (runaway heating protection)
-            if (id(last_valid_temp) != 0.0f) {
+            if (id(has_last_valid_temp) && id(last_temp_sample_ms) != 0) {
+              uint32_t elapsed_ms = now - id(last_temp_sample_ms);
               float temp_delta = x - id(last_valid_temp);
-              float time_delta_sec = 10.0f; // Update interval in seconds
-              float temp_rate = temp_delta / time_delta_sec;
+              float time_delta_sec = elapsed_ms / 1000.0f;
 
-              if (temp_rate > ${max_temp_rise_rate}) {
-                if (!id(emergency_stop).state) {
-                  id(emergency_stop_timestamp) = now;
-                  ESP_LOGE("safety",
-                    "EMERGENCY: Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
-                    temp_rate, "${temp_unit_label}", "${temp_unit_label}");
+              if (time_delta_sec > 0.0f) {
+                float temp_rate = temp_delta / time_delta_sec;
+
+                if (id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
+                  if (!id(emergency_stop).state) {
+                    if (id(emergency_stop_timestamp) == 0) {
+                      id(emergency_stop_timestamp) = now;
+                    }
+                    id(emergency_stop).turn_on();
+                    ESP_LOGE("safety",
+                      "EMERGENCY: Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
+                      temp_rate, "${temp_unit_label}", "${temp_unit_label}");
+                  }
                 }
               }
             }
+            id(last_temp_sample_ms) = now;
             id(last_valid_temp) = x;
+            id(has_last_valid_temp) = true;
         - if:
             condition:
               lambda: "return id(over_temp_shutoff).state && x > id(high_temp_alarm).state;"
             then:
               - switch.turn_on: emergency_stop
               - lambda: |-
-                  id(emergency_stop_timestamp) = millis();
+                  if (id(emergency_stop_timestamp) == 0) {
+                    id(emergency_stop_timestamp) = millis();
+                  }
                   ESP_LOGE("safety",
                     "EMERGENCY: Temperature %.1f%s exceeds High Temperature Alarm: %.1f%s",
                     id(current_temperature).state,
@@ -310,11 +331,14 @@ sensor:
               lambda: |-
                 return id(over_temp_shutoff).state &&
                        id(controller_status).state == "Active" &&
+                       id(controller_mode).state == "Heating" &&
                        x < id(low_temp_alarm).state;
             then:
               - switch.turn_on: emergency_stop
               - lambda: |-
-                  id(emergency_stop_timestamp) = millis();
+                  if (id(emergency_stop_timestamp) == 0) {
+                    id(emergency_stop_timestamp) = millis();
+                  }
                   ESP_LOGE("safety",
                     "EMERGENCY: Temperature %.1f%s below Low Temperature Alarm: %.1f%s (possible sensor failure)",
                     id(current_temperature).state,
@@ -400,7 +424,9 @@ text_sensor:
                   then:
                     - switch.turn_on: emergency_stop
               - lambda: |-
-                  id(emergency_stop_timestamp) = millis();
+                  if (id(emergency_stop_timestamp) == 0) {
+                    id(emergency_stop_timestamp) = millis();
+                  }
                   ESP_LOGE("safety", "EMERGENCY: Temperature sensor disconnected, forcing emergency stop");
     web_server:
       sorting_group_id: sorting_group_sensors
@@ -504,14 +530,8 @@ text_sensor:
       unsigned long elapsed_sec = (millis() - id(emergency_stop_timestamp)) / 1000;
 
       // Calculate time components
-      unsigned long years = elapsed_sec / (365UL * 24 * 3600);
-      unsigned long remaining = elapsed_sec % (365UL * 24 * 3600);
-
-      unsigned long months = remaining / (30UL * 24 * 3600);  // Approximate 30 days per month
-      remaining %= (30UL * 24 * 3600);
-
-      unsigned long days = remaining / (24UL * 3600);
-      remaining %= (24UL * 3600);
+      unsigned long days = elapsed_sec / (24UL * 3600);
+      unsigned long remaining = elapsed_sec % (24UL * 3600);
 
       unsigned long hours = remaining / 3600;
       remaining %= 3600;
@@ -521,8 +541,6 @@ text_sensor:
 
       // Build the output string dynamically, only including non-zero values
       std::string result = "";
-      if (years > 0) result += std::to_string(years) + "y ";
-      if (months > 0) result += std::to_string(months) + "mo ";
       if (days > 0) result += std::to_string(days) + "d ";
       if (hours > 0) result += std::to_string(hours) + "h ";
       if (minutes > 0) result += std::to_string(minutes) + "m ";
@@ -731,7 +749,9 @@ switch:
     icon: "mdi:car-brake-alert"
     on_turn_on:
       - lambda: |-
-          id(emergency_stop_timestamp) = millis();
+          if (id(emergency_stop_timestamp) == 0) {
+            id(emergency_stop_timestamp) = millis();
+          }
       - logger.log:
           format: "Emergency stopped enabled"
           level: INFO
@@ -850,12 +870,14 @@ interval:
             lambda: |-
               if (id(comms_fault_latched)) return false;
               if (id(last_temp_update_ms) == 0) return false;
-              return (millis() - id(last_temp_update_ms)) > 90000UL;
+              return (millis() - id(last_temp_update_ms)) > ${comms_timeout_ms}UL;
           then:
             - lambda: |-
                 id(comms_fault_latched) = true;
-                id(emergency_stop_timestamp) = millis();
-                ESP_LOGE("safety", "EMERGENCY: Temperature telemetry stale for >90s, forcing emergency stop");
+                if (id(emergency_stop_timestamp) == 0) {
+                  id(emergency_stop_timestamp) = millis();
+                }
+                ESP_LOGE("safety", "EMERGENCY: Temperature telemetry stale for >${comms_timeout_ms}ms, forcing emergency stop");
             - if:
                 condition:
                   lambda: "return !id(emergency_stop).state;"
