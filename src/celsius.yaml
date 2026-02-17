@@ -1,5 +1,5 @@
 #
-# Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers using the 
+# Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers using the
 # ESP8285 (XY-WFPOW) microcontroller. Designed to work with Bambu 3D Printers as a chamber heater controller.
 # Copyright (C) 2026    Katherine Dubé
 #
@@ -17,11 +17,27 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+# ========================================
+# CELSIUS CONFIGURATION
+# ========================================
+# This file defines temperature unit settings and number entities for Celsius operation.
+# To use Fahrenheit instead, modify the include in temperature_controller.yaml to use fahrenheit.yaml
+#
+# Temperature ranges are set to match the physical controller's capabilities:
+#   - Operating thresholds: 0-85°C (32-185°F)
+#   - Alarm limits: -40-110°C (-40-230°F)
+#   - Calibration offset: ±10°C (±18°F)
+
 substitutions:
   temp_unit: "Celsius"
   temp_unit_label: "°C"
 
 globals:
+  # Filament-specific temperature presets with ±1°C hysteresis
+  # Hysteresis prevents rapid relay cycling (chatter) by creating a 2°C operating band
+  # Format: {start_temp, stop_temp} where start < stop for heating mode
+  # Example: PLA at 22°C uses 21°C (start heating) to 23°C (stop heating)
+  # Note: For cooling mode, you would configure these with start > stop
   - id: filament_presets
     type: std::map<std::string, std::pair<float, float>>
     initial_value: |-
@@ -36,6 +52,14 @@ globals:
       }()
 
 number:
+  # ========================================
+  # TEMPERATURE THRESHOLDS (Operating Range)
+  # ========================================
+  # These define when the relay turns on/off during normal operation
+  # Heating mode: low < high (e.g., start at 21°C, stop at 23°C)
+  # Cooling mode: low > high (e.g., start at 23°C, stop at 21°C)
+  # Range limited to safe operating range: 0-85°C
+
   - platform: modbus_controller
     modbus_controller_id: modbus_device
     name: "Low Temp Threshold"
@@ -74,6 +98,15 @@ number:
     web_server:
       sorting_group_id: sorting_group_settings
 
+  # ========================================
+  # TEMPERATURE ALARMS (Safety Limits)
+  # ========================================
+  # These trigger emergency stops when exceeded (if over_temp_shutoff enabled)
+  # Set beyond normal operating range to catch dangerous conditions
+  # Example: If operating at 60°C, set high alarm to 70°C, low alarm to 5°C
+  # Both heating and cooling modes can use these alarms for safety
+  # Range: -40-110°C (controller's full measurement range)
+
   - platform: modbus_controller
     modbus_controller_id: modbus_device
     name: "High Temp Alarm"
@@ -111,6 +144,14 @@ number:
     icon: "mdi:temperature-chevron-down"
     web_server:
       sorting_group_id: sorting_group_settings
+
+  # ========================================
+  # TEMPERATURE CALIBRATION
+  # ========================================
+  # Offset applied to temperature sensor reading for calibration
+  # Positive values increase displayed temperature, negative values decrease
+  # Example: If sensor reads 21°C but actual is 22°C, set offset to +1.0
+  # Range: ±10°C
 
   - platform: modbus_controller
     modbus_controller_id: modbus_device
