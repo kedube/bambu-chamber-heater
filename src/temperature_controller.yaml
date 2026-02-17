@@ -21,26 +21,33 @@ substitutions:
   device_name: "chamber-heater"
   friendly_name: "Chamber Heater Controller"
   device_description: "ESP8285-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
-  baud_rate: "115200"
-  modbus_slave_address: "0x1"
-  modbus_update_interval: "10s"
-  temp_multiplier: "0.1"
-  temp_read_lambda: "return x * 0.1f;"
-  temp_write_lambda: "return (int16_t) lroundf(x * 10.0f);"
-  # Maximum safe temperature rise rate (degrees per second)
-  # 0.5°C/sec = 30°C/min is reasonable for chamber heating but would indicate runaway heating
-  # Only checks RISING temperature - falling is normal when heater turns off
-  max_temp_rise_rate: "0.5"
-  # Communication timeout in milliseconds (90000ms = 90s)
-  # Must be > 3x modbus_update_interval (10s) to avoid false positives
-  # Checked every 30s by interval task
-  comms_timeout_ms: "90000"
   sw_version: "1.4.3"
   pla_temp: "22"
   petg_temp: "40"
   abs_temp: "60"
   asa_temp: "65"
   nylon_temp: "70"
+  # Maximum safe temperature rise rate (degrees per second)
+  # 0.5°C/sec = 30°C/min is reasonable for chamber heating but would indicate runaway heating
+  # Only checks RISING temperature - falling is normal when heater turns off
+  max_temp_rise_rate: "0.5"
+  baud_rate: "115200"
+  modbus_slave_address: "0x1"
+  modbus_update_interval: "10s"
+  temp_multiplier: "0.1"
+  temp_read_lambda: "return x * 0.1f;"
+  temp_write_lambda: "return (int16_t) lroundf(x * 10.0f);"
+  # Communication timeout in milliseconds (90000ms = 90s)
+  # Must be > 3x modbus_update_interval (10s) to avoid false positives
+  # Checked every 30s by interval task
+  comms_timeout_ms: "90000"
+
+packages:
+  select_units: !include 
+    # Select the appropriate temperature unit file to include based on your preference. 
+    # Both files define the same entities, but with different units and value ranges.
+    file: celsius.yaml
+    #file: fahrenheit.yaml
 
 globals:
   # Restart confirmation flag - user must enable before restarting
@@ -88,13 +95,12 @@ globals:
     type: unsigned long
     restore_value: no
     initial_value: '0'
-
-packages:
-  select_units: !include 
-    # Select the appropriate temperature unit file to include based on your preference. 
-    # Both files define the same entities, but with different units and value ranges.
-    file: celsius.yaml
-    #file: fahrenheit.yaml
+  # Boot initialization complete flag
+  # Prevents emergency stop triggers during initial sensor synchronization
+  - id: boot_complete
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
 script:
   # Ensures controller's temperature unit matches the configured unit in this file
@@ -106,7 +112,7 @@ script:
       - if:
           condition:
             lambda: |-
-              return id(temperature_unit).state != std::string("${temp_unit}");
+              return id(temperature_unit).state != "${temp_unit}";
           then:
             - select.set:
                 id: set_temperature_unit
@@ -138,10 +144,16 @@ esphome:
   friendly_name: ${friendly_name}
   comment: ${device_description}
   area: !secret location_name
-  on_boot: 
+  on_boot:
     priority: 200
     then:
       - script.execute: write_temp_unit
+      # Wait for initial modbus synchronization before enabling emergency checks
+      # Prevents false emergency stops during boot
+      - delay: 15s
+      - lambda: |-
+          id(boot_complete) = true;
+          ESP_LOGI("boot", "Boot complete - emergency stop checks now active");
   #platformio_options:
   #  upload_port: ${device_name} + ".local"
   #  upload_flags: -a !secret ota_password
@@ -310,6 +322,7 @@ sensor:
       then:
         - lambda: |-
             uint32_t now = millis();
+            bool emergency_active = id(emergency_stop).state;  // Cache state to reduce Modbus reads
             id(last_temp_update_ms) = now;
             id(comms_fault_latched) = false;
 
@@ -328,8 +341,8 @@ sensor:
               if (time_delta_sec > 0.0f) {
                 float temp_rate = temp_delta / time_delta_sec;
 
-                if (id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
-                  if (!id(emergency_stop).state) {
+                if (id(boot_complete) && id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
+                  if (!emergency_active) {
                     id(emergency_stop).turn_on();
                     ESP_LOGE("safety",
                       "EMERGENCY: Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
@@ -343,9 +356,15 @@ sensor:
             id(has_last_valid_temp) = true;
         # High temperature alarm - absolute safety limit
         # Triggers regardless of heating/cooling mode
+        # Only check after boot complete and alarm sensor is initialized (not NaN)
         - if:
             condition:
-              lambda: "return id(over_temp_shutoff).state && x > id(high_temp_alarm).state;"
+              lambda: |-
+                return id(boot_complete) &&
+                       id(over_temp_shutoff).state &&
+                       !isnan(id(high_temp_alarm).state) &&
+                       x > id(high_temp_alarm).state &&
+                       !id(emergency_stop).state;
             then:
               - switch.turn_on: emergency_stop
               - lambda: |-
@@ -359,15 +378,19 @@ sensor:
         # Low temperature alarm - detects sensor failure or runaway cooling
         # Only triggers when controller is ACTIVE (heating or cooling)
         # When STOPPED, temp naturally falls and is not an emergency
+        # Only check after boot complete and alarm sensor is initialized (not NaN)
         # NOTE: Checks both heating AND cooling modes:
         #   - Heating mode + low temp = heater failure or sensor fault
         #   - Cooling mode + low temp = runaway cooling or sensor fault
         - if:
             condition:
               lambda: |-
-                return id(over_temp_shutoff).state &&
+                return id(boot_complete) &&
+                       id(over_temp_shutoff).state &&
+                       !isnan(id(low_temp_alarm).state) &&
                        id(controller_status).state == "Active" &&
-                       x < id(low_temp_alarm).state;
+                       x < id(low_temp_alarm).state &&
+                       !id(emergency_stop).state;
             then:
               - switch.turn_on: emergency_stop
               - lambda: |-
@@ -448,15 +471,11 @@ text_sensor:
       then:
         - if:
             condition:
-              lambda: "return x == \"Disconnected\";"
+              lambda: "return x == \"Disconnected\" && !id(emergency_stop).state;"
             then:
               # Sensor disconnection is critical - cannot safely operate without temperature data
               # Force emergency stop immediately
-              - if:
-                  condition:
-                    lambda: "return !id(emergency_stop).state;"
-                  then:
-                    - switch.turn_on: emergency_stop
+              - switch.turn_on: emergency_stop
               - lambda: 'ESP_LOGE("safety", "EMERGENCY: Temperature sensor disconnected, forcing emergency stop");'
     web_server:
       sorting_group_id: sorting_group_sensors
@@ -571,15 +590,17 @@ text_sensor:
       unsigned long minutes = remaining / 60;
       unsigned long seconds = remaining % 60;
 
-      // Build the output string dynamically, only including non-zero values
-      std::string result = "";
-      if (days > 0) result += std::to_string(days) + "d ";
-      if (hours > 0) result += std::to_string(hours) + "h ";
-      if (minutes > 0) result += std::to_string(minutes) + "m ";
-      if (seconds > 0 || result.empty()) result += std::to_string(seconds) + "s ";
+      // Build the output string using single buffer allocation (more efficient than string concatenation)
+      char buffer[64];
+      char* p = buffer;
 
-      result += "ago";
-      return result;
+      if (days > 0) p += sprintf(p, "%lud ", days);
+      if (hours > 0) p += sprintf(p, "%luh ", hours);
+      if (minutes > 0) p += sprintf(p, "%lum ", minutes);
+      if (seconds > 0 || p == buffer) p += sprintf(p, "%lus ", seconds);
+      sprintf(p, "ago");
+
+      return std::string(buffer);
     update_interval: 5s
     web_server:
       sorting_group_id: sorting_group_system
@@ -715,6 +736,12 @@ select:
               call_stop.set_value(temp_stop);
               call_stop.perform();
               
+              if (id(emergency_stop).state == 1) {             
+                id(emergency_stop).turn_off();
+                ESP_LOGI("preset", "Emergency stop deactivated");
+                return;
+              }
+
               ESP_LOGI("preset", "%s mode set (%.1f${temp_unit_label} - %.1f${temp_unit_label})",
                        x.c_str(), temp_start, temp_stop);
             } else {
@@ -922,11 +949,7 @@ interval:
             - lambda: |-
                 id(comms_fault_latched) = true;
                 ESP_LOGE("safety", "EMERGENCY: Temperature telemetry stale for >${comms_timeout_ms}ms, forcing emergency stop");
-            - if:
-                condition:
-                  lambda: "return !id(emergency_stop).state;"
-                then:
-                  - switch.turn_on: emergency_stop
+            - switch.turn_on: emergency_stop
     
 web_server:
   port: 80

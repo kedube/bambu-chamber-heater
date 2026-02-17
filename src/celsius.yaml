@@ -43,11 +43,11 @@ globals:
     initial_value: |-
       []() {
         std::map<std::string, std::pair<float, float>> presets;
-        presets[std::string("PLA")] = {${pla_temp} - 1, ${pla_temp} + 1};
-        presets[std::string("PETG")] = {${petg_temp} - 1, ${petg_temp} + 1};
-        presets[std::string("ABS")] = {${abs_temp} - 1, ${abs_temp} + 1};
-        presets[std::string("ASA")] = {${asa_temp} - 1, ${asa_temp} + 1};
-        presets[std::string("Nylon")] = {${nylon_temp} - 1, ${nylon_temp} + 1};
+        presets.emplace("PLA", std::make_pair(${pla_temp} - 1, ${pla_temp} + 1));
+        presets.emplace("PETG", std::make_pair(${petg_temp} - 1, ${petg_temp} + 1));
+        presets.emplace("ABS", std::make_pair(${abs_temp} - 1, ${abs_temp} + 1));
+        presets.emplace("ASA", std::make_pair(${asa_temp} - 1, ${asa_temp} + 1));
+        presets.emplace("Nylon", std::make_pair(${nylon_temp} - 1, ${nylon_temp} + 1));
         return presets;
       }()
 

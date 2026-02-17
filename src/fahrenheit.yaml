@@ -45,11 +45,11 @@ globals:
       []() {
         auto c_to_f = [](float c) { return c * 9.0f / 5.0f + 32.0f; };
         std::map<std::string, std::pair<float, float>> presets;
-        presets[std::string("PLA")] = {c_to_f(${pla_temp}) - 1, c_to_f(${pla_temp}) + 1};
-        presets[std::string("PETG")] = {c_to_f(${petg_temp}) - 1, c_to_f(${petg_temp}) + 1};
-        presets[std::string("ABS")] = {c_to_f(${abs_temp}) - 1, c_to_f(${abs_temp}) + 1};
-        presets[std::string("ASA")] = {c_to_f(${asa_temp}) - 1, c_to_f(${asa_temp}) + 1};
-        presets[std::string("Nylon")] = {c_to_f(${nylon_temp}) - 1, c_to_f(${nylon_temp}) + 1};
+        presets.emplace("PLA", std::make_pair(c_to_f(${pla_temp}) - 1, c_to_f(${pla_temp}) + 1));
+        presets.emplace("PETG", std::make_pair(c_to_f(${petg_temp}) - 1, c_to_f(${petg_temp}) + 1));
+        presets.emplace("ABS", std::make_pair(c_to_f(${abs_temp}) - 1, c_to_f(${abs_temp}) + 1));
+        presets.emplace("ASA", std::make_pair(c_to_f(${asa_temp}) - 1, c_to_f(${asa_temp}) + 1));
+        presets.emplace("Nylon", std::make_pair(c_to_f(${nylon_temp}) - 1, c_to_f(${nylon_temp}) + 1));
         return presets;
       }()
 
