@@ -330,10 +330,6 @@ sensor:
 
                 if (id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
                   if (!id(emergency_stop).state) {
-                    // Only set timestamp on FIRST emergency to preserve diagnostic info
-                    if (id(emergency_stop_timestamp) == 0) {
-                      id(emergency_stop_timestamp) = now;
-                    }
                     id(emergency_stop).turn_on();
                     ESP_LOGE("safety",
                       "EMERGENCY: Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
@@ -353,10 +349,6 @@ sensor:
             then:
               - switch.turn_on: emergency_stop
               - lambda: |-
-                  // Preserve first emergency timestamp for diagnostics
-                  if (id(emergency_stop_timestamp) == 0) {
-                    id(emergency_stop_timestamp) = millis();
-                  }
                   ESP_LOGE("safety",
                     "EMERGENCY: Temperature %.1f%s exceeds High Temperature Alarm: %.1f%s",
                     id(current_temperature).state,
@@ -379,10 +371,6 @@ sensor:
             then:
               - switch.turn_on: emergency_stop
               - lambda: |-
-                  // Preserve first emergency timestamp for diagnostics
-                  if (id(emergency_stop_timestamp) == 0) {
-                    id(emergency_stop_timestamp) = millis();
-                  }
                   ESP_LOGE("safety",
                     "EMERGENCY: Temperature %.1f%s below Low Temperature Alarm: %.1f%s (possible sensor failure)",
                     id(current_temperature).state,
@@ -469,12 +457,7 @@ text_sensor:
                     lambda: "return !id(emergency_stop).state;"
                   then:
                     - switch.turn_on: emergency_stop
-              - lambda: |-
-                  // Preserve first emergency timestamp for diagnostics
-                  if (id(emergency_stop_timestamp) == 0) {
-                    id(emergency_stop_timestamp) = millis();
-                  }
-                  ESP_LOGE("safety", "EMERGENCY: Temperature sensor disconnected, forcing emergency stop");
+              - lambda: 'ESP_LOGE("safety", "EMERGENCY: Temperature sensor disconnected, forcing emergency stop");'
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -938,10 +921,6 @@ interval:
           then:
             - lambda: |-
                 id(comms_fault_latched) = true;
-                // Preserve first emergency timestamp for diagnostics
-                if (id(emergency_stop_timestamp) == 0) {
-                  id(emergency_stop_timestamp) = millis();
-                }
                 ESP_LOGE("safety", "EMERGENCY: Temperature telemetry stale for >${comms_timeout_ms}ms, forcing emergency stop");
             - if:
                 condition:
