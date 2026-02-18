@@ -21,7 +21,9 @@ substitutions:
   device_name: "chamber-heater"
   friendly_name: "Chamber Heater Controller"
   device_description: "ESP8285-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
-  sw_version: "1.4.3"
+  device_area: "Office"
+  bambu_printer_entity_id: !secret bambu_printer_id
+  sw_version: "1.5"
   pla_temp: "22"
   petg_temp: "40"
   abs_temp: "60"
@@ -101,6 +103,12 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Home Assistant API connection status - used to trigger emergency stop if disconnected for too long
+  - id: api_connection
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
 
 script:
   # Ensures controller's temperature unit matches the configured unit in this file
@@ -132,6 +140,21 @@ script:
                 format: "Restart confirmation timed out"
                 level: INFO
             - switch.turn_off: restart_confirmation
+  # Safety check for Bambu printer connectivity
+  # Forces emergency stop whenever printer online sensor is OFF
+  - id: check_bambu_printer_online
+    mode: queued
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(boot_complete) &&
+                     !id(bambu_printer_online).state;
+          then:
+            - logger.log:
+                format: "EMERGENCY: Bambu 3D Printer is offline - forcing emergency stop"
+                level: WARN
+            - switch.turn_on: emergency_stop
 
 esp8266:
   board: esp8285
@@ -143,21 +166,28 @@ esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
   comment: ${device_description}
-  area: !secret location_name
+  area: ${device_area}
   on_boot:
     priority: 200
     then:
       - script.execute: write_temp_unit
       # Wait for initial modbus synchronization before enabling emergency checks
       # Prevents false emergency stops during boot
-      - delay: 15s
+      - delay: 30s
       - lambda: |-
           id(boot_complete) = true;
           ESP_LOGI("boot", "Boot complete - emergency stop checks now active");
+      - script.execute: check_bambu_printer_online
   #platformio_options:
   #  upload_port: ${device_name} + ".local"
   #  upload_flags: -a !secret ota_password
   #  upload_protocol: espota
+
+# Enable Home Assistant API
+api:
+  # Comment/uncomment encryption key if you want to use API features or integrate with Home Assistant
+  encryption:
+    key: !secret encryption_key
 
 logger:
   level: DEBUG
@@ -170,11 +200,6 @@ status_led:
   pin:
     number: GPIO2
     inverted: true
-
-# Enable Home Assistant API
-api:
-  encryption:
-    key: !secret encryption_key
 
 ota:
   # Keep standard ESPHome OTA (Dashboard/CLI)
@@ -433,6 +458,16 @@ binary_sensor:
     web_server:
       sorting_group_id: sorting_group_sensors
 
+  - platform: homeassistant
+    name: "Bambu Printer Online"
+    entity_category: diagnostic
+    entity_id: binary_sensor.${bambu_printer_entity_id}_online
+    id: bambu_printer_online
+    internal: true
+    on_state:
+      then:
+        - script.execute: check_bambu_printer_online
+
 text_sensor:
   - platform: modbus_controller
     modbus_controller_id: modbus_device
@@ -605,6 +640,76 @@ text_sensor:
     web_server:
       sorting_group_id: sorting_group_system
 
+  - platform: homeassistant
+    name: "Bambu Printer Status"
+    entity_id: sensor.${bambu_printer_entity_id}_print_status
+    entity_category: diagnostic
+    id: bambu_printer_status
+    icon: "mdi:printer-3d"
+    on_value:
+      then:
+        - lambda: |-
+            if (x == "finish" || x == "failed" || x == "offline") {
+              // Print ended - turn off chamber heater
+              auto call = id(filament_temp_preset).make_call();
+              call.set_option("Off");
+              call.perform();
+              ESP_LOGI("bambu", "Print ended, automatically turning off chamber heater");
+            }
+
+  - platform: homeassistant
+    name: "Bambu Active Filament Type"
+    entity_id: sensor.${bambu_printer_entity_id}_active_tray
+    attribute: "type"
+    entity_category: diagnostic
+    id: bambu_filament_type
+    on_value:
+      then:
+        - lambda: |-
+            ESP_LOGI("bambu", "Active filament type: %s", x.c_str());
+
+            // Auto-select chamber temperature based on filament type
+            // Only change if printer is actively printing or preparing
+            if (id(bambu_printer_status).state == "running" ||
+                id(bambu_printer_status).state == "prepare") {
+
+              std::string filament_upper = x;
+              // Convert to uppercase for case-insensitive matching
+              std::transform(filament_upper.begin(), filament_upper.end(),
+                           filament_upper.begin(), ::toupper);
+
+              if (filament_upper == "PLA") {
+                auto call = id(filament_temp_preset).make_call();
+                call.set_option("PLA");
+                call.perform();
+                ESP_LOGI("bambu", "Auto-set chamber temp preset to PLA");
+              } else if (filament_upper == "PETG") {
+                auto call = id(filament_temp_preset).make_call();
+                call.set_option("PETG");
+                call.perform();
+                ESP_LOGI("bambu", "Auto-set chamber temp preset to PETG");
+              } else if (filament_upper == "ABS") {
+                auto call = id(filament_temp_preset).make_call();
+                call.set_option("ABS");
+                call.perform();
+                ESP_LOGI("bambu", "Auto-set chamber temp preset to ABS");
+              } else if (filament_upper == "ASA") {
+                auto call = id(filament_temp_preset).make_call();
+                call.set_option("ASA");
+                call.perform();
+                ESP_LOGI("bambu", "Auto-set chamber temp preset to ASA");
+              } else if (filament_upper == "PA" || filament_upper == "NYLON") {
+                auto call = id(filament_temp_preset).make_call();
+                call.set_option("Nylon");
+                call.perform();
+                ESP_LOGI("bambu", "Auto-set chamber temp preset to Nylon");
+              } else {
+                ESP_LOGW("bambu", "Unknown filament type: %s - keeping current preset", x.c_str());
+              }
+            }
+    web_server:
+      sorting_group_id: sorting_group_diagnostic
+
 number:
   - platform: modbus_controller
     modbus_controller_id: modbus_device
@@ -695,6 +800,7 @@ select:
   - platform: template
     name: "Filament Temp Preset"
     optimistic: true
+    restore_value: true
     options:
       - "Off"
       - "PLA"
@@ -935,6 +1041,7 @@ interval:
   # Triggers emergency stop if no updates for comms_timeout_ms (90s)
   - interval: 30s
     then:
+      # Check Modbus temperature communication
       - if:
           condition:
             lambda: |-
@@ -950,6 +1057,25 @@ interval:
                 id(comms_fault_latched) = true;
                 ESP_LOGE("safety", "EMERGENCY: Temperature telemetry stale for >${comms_timeout_ms}ms, forcing emergency stop");
             - switch.turn_on: emergency_stop
+
+  - interval: 180s
+    then:
+      # Check Home Assistant API communication
+      - if:
+          condition:
+            lambda: 'return { (id(api_connection) != true) };'
+          then:
+            - if:
+                condition: # Check if it is *now* connected
+                  api.connected: # Check if it is now connected
+                then:
+                  # Actions when just connected
+                  - lambda: "id(api_connection) = true;"
+                else:
+                  - lambda: |-
+                      id(api_connection) = false;
+                      ESP_LOGW("safety", "EMERGENCY: Home Assistant API connection lost, forcing emergency stop");
+                  - switch.turn_on: emergency_stop
     
 web_server:
   port: 80
