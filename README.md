@@ -251,7 +251,7 @@ You can also use the **Emergency Stop** switch as a manual override to immediate
 
 ![Alt Web UI Screenshot](images/screenshot.png)
 
-### 7. (Optional) Configure ESPHome integration with Home Assistant
+### 7. Configure ESPHome integration with Home Assistant
 Once the **ESP8285** module is installed and online, Home Assistant should automatically discover it through the **ESPHome** integration.
 ion.
 
@@ -259,8 +259,12 @@ Enter the same **encryption key** you defined in the `secrets.yaml` configuratio
 
 ![Alt Home Assistant Encription Key Screenshot](images/home_assistant_1.png)
 
-You can now remotely manage the temperature controller and create automations directly from Home Assistant.
+You can now remotely monitor and manage the temperature controller directly from Home Assistant.
 ![Alt Home Assistant Device Entities Screenshot](images/home_assistant_2.png)
+
+By default, when a print starts, the controller checks the selected filament type. If it matches one of the configured presets, the system automatically sets the appropriate chamber temperature and enables the heater.
+
+When the print completes or fails, the chamber heater is automatically turned off. No need to manually create automation scripts in Home Assistant. 
 
 ## Known Issues
 - The Sinilink Modbus addresses for **Sleep Switch** (`0x0014`) and **Backlight Grade** (`0x0015`) do not appear to have any effect. This may be due to limitations in the XY-SA10 controller I'm using for development or misinterpretation of Modbus address information.
