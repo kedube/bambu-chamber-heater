@@ -11,7 +11,7 @@ This project allows you to intelligently manage your chamber heater by turning i
 ### Control & Automation
 - **ESPHome Integration** - Seamless remote control and monitoring through Home Assistant
 - **Web Interface** - Standalone web server with customizable UI for direct device access
-- **Smart Automation** - Script temperature control based on print jobs, filament types, or custom conditions
+- **Builtin Automation** - Temperature control based on print jobs and filament type
 - **Filament Presets** - Pre-configured temperature profiles for PLA, PETG, ABS, ASA, and Nylon, plus user-defined settings
 
 ### Safety & Protection
@@ -20,6 +20,7 @@ This project allows you to intelligently manage your chamber heater by turning i
 - **Runaway Heating Detection** - Monitors temperature rise rate and triggers emergency stop on anomalies
 - **Sensor Fault Detection** - Automatic emergency stop on temperature sensor disconnection
 - **Communication Watchdog** - Auto-shutoff if Modbus communication is lost for >90 seconds
+- **End of Job** - Auto-shutoff when print is finished
 
 ### Configuration
 - **Dual Unit Support** - Switch between Celsius and Fahrenheit temperature units
@@ -33,6 +34,7 @@ Make sure you have the following before proceeding:
 - USB-to-TTL UART Programmer (Note: I highly recommend FTDI-based programmers)
 - Bambu P1S / X1 Carbon 3D Printer
 - Sinilink XY-SA/ST temperature controller with XY-WFPOW wireless module
+- [Bambu Lab HA integration](https://github.com/greghesp/ha-bambulab)
 
 ## References
 - [Sinilink XY-ST/SA Remote Thermostat Datasheet](https://myosuploads3.banggood.com/products/20240220/20240220213226STSA-EN.pdf)
@@ -259,15 +261,6 @@ Enter the same **encryption key** you defined in the `secrets.yaml` configuratio
 
 You can now remotely manage the temperature controller and create automations directly from Home Assistant.
 ![Alt Home Assistant Device Entities Screenshot](images/home_assistant_2.png)
-
-### 8. (Optional) Create Home Assistant automation scripts
-
-You need to install the [Bambu Lab HA Integration](https://github.com/greghesp/ha-bambulab]). Once installed, you need to create the automation scripts. In this example, an automation script was created to turn on the chamber heater when printing with ASA filament. You will need to create scripts for each of the different filament types.
-
-![Alt Home Assistant Automation Screenshot 1](images/home_assistant_automation-1.png)
-
-You only need a single script to turn off the chamber heater when the print is finished or canceled.
-![Alt Home Assistant Automation Screenshot 2](images/home_assistant_automation-2.png)
 
 ## Known Issues
 - The Sinilink Modbus addresses for **Sleep Switch** (`0x0014`) and **Backlight Grade** (`0x0015`) do not appear to have any effect. This may be due to limitations in the XY-SA10 controller I'm using for development or misinterpretation of Modbus address information.
