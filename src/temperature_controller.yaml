@@ -155,6 +155,47 @@ script:
                 format: "EMERGENCY: Bambu 3D Printer is offline - forcing emergency stop"
                 level: WARN
             - switch.turn_on: emergency_stop
+  # Auto-select chamber temperature preset based on Bambu printer's filament type
+  # Reads current filament type and sets appropriate chamber heating preset
+  - id: auto_select_filament_preset
+    mode: queued
+    then:
+      - lambda: |-
+          std::string filament = id(bambu_filament_type).state;
+          std::string filament_upper = filament;
+
+          // Convert to uppercase for case-insensitive matching
+          std::transform(filament_upper.begin(), filament_upper.end(),
+                       filament_upper.begin(), ::toupper);
+
+          if (filament_upper == "PLA") {
+            auto call = id(filament_temp_preset).make_call();
+            call.set_option("PLA");
+            call.perform();
+            ESP_LOGI("bambu", "Auto-set chamber temp preset to PLA");
+          } else if (filament_upper == "PETG") {
+            auto call = id(filament_temp_preset).make_call();
+            call.set_option("PETG");
+            call.perform();
+            ESP_LOGI("bambu", "Auto-set chamber temp preset to PETG");
+          } else if (filament_upper == "ABS") {
+            auto call = id(filament_temp_preset).make_call();
+            call.set_option("ABS");
+            call.perform();
+            ESP_LOGI("bambu", "Auto-set chamber temp preset to ABS");
+          } else if (filament_upper == "ASA") {
+            auto call = id(filament_temp_preset).make_call();
+            call.set_option("ASA");
+            call.perform();
+            ESP_LOGI("bambu", "Auto-set chamber temp preset to ASA");
+          } else if (filament_upper == "PA" || filament_upper == "NYLON") {
+            auto call = id(filament_temp_preset).make_call();
+            call.set_option("Nylon");
+            call.perform();
+            ESP_LOGI("bambu", "Auto-set chamber temp preset to Nylon");
+          } else {
+            ESP_LOGW("bambu", "Unknown filament type: %s - keeping current preset", filament.c_str());
+          }
 
 esp8266:
   board: esp8285
@@ -315,6 +356,7 @@ modbus_controller:
     setup_priority: -10
     update_interval: ${modbus_update_interval}
     command_throttle: 300ms
+    
 
 sensor:
   - platform: modbus_controller
@@ -655,7 +697,16 @@ text_sensor:
               call.set_option("Off");
               call.perform();
               ESP_LOGI("bambu", "Print ended, automatically turning off chamber heater");
+            } else if (x == "running" || x == "prepare" || x == "slicing") {
+              // Print started - auto-select chamber temp based on current filament
+              ESP_LOGI("bambu", "Print started, auto-selecting chamber temperature");
             }
+        - if:
+            condition:
+              lambda: |-
+                return x == "running" || x == "prepare" || x == "slicing";
+            then:
+              - script.execute: auto_select_filament_preset
 
   - platform: homeassistant
     name: "Bambu Active Filament Type"
@@ -666,47 +717,16 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            ESP_LOGI("bambu", "Active filament type: %s", x.c_str());
-
-            // Auto-select chamber temperature based on filament type
-            // Only change if printer is actively printing or preparing
-            if (id(bambu_printer_status).state == "running" ||
-                id(bambu_printer_status).state == "prepare") {
-
-              std::string filament_upper = x;
-              // Convert to uppercase for case-insensitive matching
-              std::transform(filament_upper.begin(), filament_upper.end(),
-                           filament_upper.begin(), ::toupper);
-
-              if (filament_upper == "PLA") {
-                auto call = id(filament_temp_preset).make_call();
-                call.set_option("PLA");
-                call.perform();
-                ESP_LOGI("bambu", "Auto-set chamber temp preset to PLA");
-              } else if (filament_upper == "PETG") {
-                auto call = id(filament_temp_preset).make_call();
-                call.set_option("PETG");
-                call.perform();
-                ESP_LOGI("bambu", "Auto-set chamber temp preset to PETG");
-              } else if (filament_upper == "ABS") {
-                auto call = id(filament_temp_preset).make_call();
-                call.set_option("ABS");
-                call.perform();
-                ESP_LOGI("bambu", "Auto-set chamber temp preset to ABS");
-              } else if (filament_upper == "ASA") {
-                auto call = id(filament_temp_preset).make_call();
-                call.set_option("ASA");
-                call.perform();
-                ESP_LOGI("bambu", "Auto-set chamber temp preset to ASA");
-              } else if (filament_upper == "PA" || filament_upper == "NYLON") {
-                auto call = id(filament_temp_preset).make_call();
-                call.set_option("Nylon");
-                call.perform();
-                ESP_LOGI("bambu", "Auto-set chamber temp preset to Nylon");
-              } else {
-                ESP_LOGW("bambu", "Unknown filament type: %s - keeping current preset", x.c_str());
-              }
-            }
+            ESP_LOGI("bambu", "Active filament type changed to: %s", x.c_str());
+        - if:
+            condition:
+              lambda: |-
+                // Only auto-select if printer is actively printing or preparing
+                return id(bambu_printer_status).state == "running" ||
+                       id(bambu_printer_status).state == "prepare" ||
+                       id(bambu_printer_status).state == "slicing";
+            then:
+              - script.execute: auto_select_filament_preset
     web_server:
       sorting_group_id: sorting_group_diagnostic
 
