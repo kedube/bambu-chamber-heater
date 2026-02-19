@@ -1,7 +1,7 @@
 # Bambu Chamber Heater - ESPHome Controller
 ESPHome implementation to remotely control Sinilink **XY-SA/ST series temperature controllers** using the **XY-WFPOW (ESP8285-based)** module. Designed specifically to work with *Bambu Lab P1S/X1 Carbon 3D printers* and integration with Home Assistant or managed with the web interface. 
 
-This project allows you to intelligently manage your chamber heater by turning it on/off automatically, linking it with print jobs, and controlling it with automation scripts. Inspired by the [BambuSauna project](https://makerworld.com/en/models/539096-bambusauna-bambulab-x1c-p1p-p1s-chamber-heater).  
+This project allows you to intelligently manage your chamber heater by turning it on/off automatically, linking it with print jobs, and controlling it with automation scripts. Inspired by the [BambuSauna project](https://makerworld.com/en/models/2417482-bambusauna-for-sinilink-xy-sa-st-temp-controller).  
 
 ![Alt screenshot](images/bambusauna-1.jpeg)
 ![Alt screenshot](images/sinilink_temperature_controller.jpeg)
