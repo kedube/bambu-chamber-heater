@@ -34,7 +34,7 @@ Make sure you have the following before proceeding:
 - USB-to-TTL UART Programmer (Note: I highly recommend FTDI-based programmers)
 - Bambu P1S / X1 Carbon 3D Printer
 - Sinilink XY-SA/ST temperature controller with XY-WFPOW wireless module
-- [Bambu Lab HA integration](https://github.com/greghesp/ha-bambulab)
+- Home Assistant with [Bambu Lab HA integration](https://github.com/greghesp/ha-bambulab) installed
 
 ## References
 - [Sinilink XY-ST/SA Remote Thermostat Datasheet](https://myosuploads3.banggood.com/products/20240220/20240220213226STSA-EN.pdf)
