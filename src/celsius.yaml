@@ -44,10 +44,22 @@ globals:
       []() {
         std::map<std::string, std::pair<float, float>> presets;
         presets.emplace("PLA", std::make_pair(${pla_temp} - 1, ${pla_temp} + 1));
+        presets.emplace("TPU", std::make_pair(${tpu_temp} - 1, ${tpu_temp} + 1));
         presets.emplace("PETG", std::make_pair(${petg_temp} - 1, ${petg_temp} + 1));
+        presets.emplace("PCTG", std::make_pair(${pctg_temp} - 1, ${pctg_temp} + 1));
         presets.emplace("ABS", std::make_pair(${abs_temp} - 1, ${abs_temp} + 1));
         presets.emplace("ASA", std::make_pair(${asa_temp} - 1, ${asa_temp} + 1));
-        presets.emplace("Nylon", std::make_pair(${nylon_temp} - 1, ${nylon_temp} + 1));
+        presets.emplace("PC", std::make_pair(${pc_temp} - 1, ${pc_temp} + 1));
+        presets.emplace("PET", std::make_pair(${pet_temp} - 1, ${pet_temp} + 1));
+        presets.emplace("PA", std::make_pair(${pa_temp} - 1, ${pa_temp} + 1));
+        presets.emplace("PA6", std::make_pair(${pa6_temp} - 1, ${pa6_temp} + 1));
+        presets.emplace("PA12", std::make_pair(${pa12_temp} - 1, ${pa12_temp} + 1));
+        presets.emplace("PA612", std::make_pair(${pa612_temp} - 1, ${pa612_temp} + 1));
+        presets.emplace("PPA", std::make_pair(${ppa_temp} - 1, ${ppa_temp} + 1));
+        presets.emplace("PPS", std::make_pair(${pps_temp} - 1, ${pps_temp} + 1));
+        presets.emplace("PP", std::make_pair(${pp_temp} - 1, ${pp_temp} + 1));
+        presets.emplace("PE", std::make_pair(${pe_temp} - 1, ${pe_temp} + 1));
+        presets.emplace("PAHT", std::make_pair(${paht_temp} - 1, ${paht_temp} + 1));
         return presets;
       }()
 

@@ -46,10 +46,22 @@ globals:
         auto c_to_f = [](float c) { return c * 9.0f / 5.0f + 32.0f; };
         std::map<std::string, std::pair<float, float>> presets;
         presets.emplace("PLA", std::make_pair(c_to_f(${pla_temp}) - 1, c_to_f(${pla_temp}) + 1));
+        presets.emplace("TPU", std::make_pair(c_to_f(${tpu_temp}) - 1, c_to_f(${tpu_temp}) + 1));
         presets.emplace("PETG", std::make_pair(c_to_f(${petg_temp}) - 1, c_to_f(${petg_temp}) + 1));
+        presets.emplace("PCTG", std::make_pair(c_to_f(${pctg_temp}) - 1, c_to_f(${pctg_temp}) + 1));
         presets.emplace("ABS", std::make_pair(c_to_f(${abs_temp}) - 1, c_to_f(${abs_temp}) + 1));
         presets.emplace("ASA", std::make_pair(c_to_f(${asa_temp}) - 1, c_to_f(${asa_temp}) + 1));
-        presets.emplace("Nylon", std::make_pair(c_to_f(${nylon_temp}) - 1, c_to_f(${nylon_temp}) + 1));
+        presets.emplace("PC", std::make_pair(c_to_f(${pc_temp}) - 1, c_to_f(${pc_temp}) + 1));
+        presets.emplace("PET", std::make_pair(c_to_f(${pet_temp}) - 1, c_to_f(${pet_temp}) + 1));
+        presets.emplace("PA", std::make_pair(c_to_f(${pa_temp}) - 1, c_to_f(${pa_temp}) + 1));
+        presets.emplace("PA6", std::make_pair(c_to_f(${pa6_temp}) - 1, c_to_f(${pa6_temp}) + 1));
+        presets.emplace("PA12", std::make_pair(c_to_f(${pa12_temp}) - 1, c_to_f(${pa12_temp}) + 1));
+        presets.emplace("PA612", std::make_pair(c_to_f(${pa612_temp}) - 1, c_to_f(${pa612_temp}) + 1));
+        presets.emplace("PPA", std::make_pair(c_to_f(${ppa_temp}) - 1, c_to_f(${ppa_temp}) + 1));
+        presets.emplace("PPS", std::make_pair(c_to_f(${pps_temp}) - 1, c_to_f(${pps_temp}) + 1));
+        presets.emplace("PP", std::make_pair(c_to_f(${pp_temp}) - 1, c_to_f(${pp_temp}) + 1));
+        presets.emplace("PE", std::make_pair(c_to_f(${pe_temp}) - 1, c_to_f(${pe_temp}) + 1));
+        presets.emplace("PAHT", std::make_pair(c_to_f(${paht_temp}) - 1, c_to_f(${paht_temp}) + 1));
         return presets;
       }()
 

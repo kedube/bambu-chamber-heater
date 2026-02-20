@@ -23,12 +23,24 @@ substitutions:
   device_description: "ESP8285-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
   device_area: "Office"
   bambu_printer_entity_id: !secret bambu_printer_id
-  sw_version: "1.5"
-  pla_temp: "22"
-  petg_temp: "40"
-  abs_temp: "60"
-  asa_temp: "65"
-  nylon_temp: "70"
+  sw_version: "1.5.1"
+  pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pctg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  abs_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  asa_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pc_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pet_temp: "50" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa_temp: "60" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa6_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa12_temp: "60" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa612_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  ppa_temp: "70" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pps_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pp_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pe_temp: "75" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  paht_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   # Maximum safe temperature rise rate (degrees per second)
   # 0.5°C/sec = 30°C/min is reasonable for chamber heating but would indicate runaway heating
   # Only checks RISING temperature - falling is normal when heater turns off
@@ -52,6 +64,89 @@ packages:
     #file: fahrenheit.yaml
 
 globals:
+  # Filament type aliases - maps Bambu filament names to preset names
+  - id: filament_type_map
+    type: std::map<std::string, std::string>
+    restore_value: no
+    initial_value: |-
+      {
+        // PLA variants
+        {"PLA", "PLA"},
+        {"PLA SILK", "PLA"},
+        {"PLA+", "PLA"},
+        {"PLA-CF", "PLA"},
+        {"MATTE PLA", "PLA"},
+        {"PLA HIGH SPEED", "PLA"},
+        
+        // TPU variants
+        {"TPU", "TPU"},
+        {"TPU 95A", "TPU"},
+        {"TPU 85A HF", "TPU"},
+        
+        // PETG variants
+        {"PETG", "PETG"},
+        {"PETG HF", "PETG"},
+        {"PETG-CF", "PETG"},
+        {"PETG-RCF", "PETG"},
+        {"PETG-ESD", "PETG"},
+        
+        // PCTG variants
+        {"PCTG", "PCTG"},
+        
+        // ABS variants
+        {"ABS", "ABS"},
+        {"ABS-GF", "ABS"},
+        
+        // ASA variants
+        {"ASA", "ASA"},
+        {"ASA-CF", "ASA"},
+        {"ASA-AERO", "ASA"},
+        
+        // PC variants
+        {"PC", "PC"},
+        {"PC FR", "PC"},
+        
+        // PET variants
+        {"PET", "PET"},
+        {"PET-CF", "PET"},
+        
+        // PA variants
+        {"PA", "PA"},
+        {"PA-CF", "PA"},
+        
+        // PA6 variants
+        {"PA6", "PA6"},
+        {"PA6-GF", "PA6"},
+        {"PA6-CF", "PA6"},
+        
+        // PA12 variants
+        {"PA12", "PA12"},
+        {"PA12-CF", "PA12"},
+        
+        // PA612 variants
+        {"PA612", "PA612"},
+        {"PA612-CF", "PA612"},
+        
+        // PPA variants
+        {"PPA-GF", "PPA"},
+        {"PPA-CF", "PPA"},
+        
+        // PP variants
+        {"PP", "PP"},
+        {"PP-GF", "PP"},
+        {"PP-CF", "PP"},
+        
+        // PPS variants
+        {"PPS", "PPS"},
+        {"PPS-CF", "PPS"},
+        
+        // PE variants
+        {"PE", "PE"},
+        {"PE-CF", "PE"},
+        
+        // PAHT variants
+        {"PAHT-CF", "PAHT"}
+      }
   # Restart confirmation flag - user must enable before restarting
   - id: restart_confirmed
     type: bool
@@ -109,7 +204,6 @@ globals:
     restore_value: no
     initial_value: 'false'
 
-
 script:
   # Ensures controller's temperature unit matches the configured unit in this file
   # Runs on boot to sync controller if it was changed via physical buttons
@@ -163,38 +257,27 @@ script:
       - lambda: |-
           std::string filament = id(bambu_filament_type).state;
           std::string filament_upper = filament;
-
-          // Convert to uppercase for case-insensitive matching
+          
+          // Convert to uppercase
           std::transform(filament_upper.begin(), filament_upper.end(),
                        filament_upper.begin(), ::toupper);
-
-          if (filament_upper == "PLA") {
+          
+          // Look up preset name from filament type
+          auto type_it = id(filament_type_map).find(filament_upper);
+          
+          if (type_it != id(filament_type_map).end()) {
+            std::string preset_name = type_it->second;
+            
+            // Set the preset
             auto call = id(filament_temp_preset).make_call();
-            call.set_option("PLA");
+            call.set_option(preset_name);
             call.perform();
-            ESP_LOGI("bambu", "Auto-set chamber temp preset to PLA");
-          } else if (filament_upper == "PETG") {
-            auto call = id(filament_temp_preset).make_call();
-            call.set_option("PETG");
-            call.perform();
-            ESP_LOGI("bambu", "Auto-set chamber temp preset to PETG");
-          } else if (filament_upper == "ABS") {
-            auto call = id(filament_temp_preset).make_call();
-            call.set_option("ABS");
-            call.perform();
-            ESP_LOGI("bambu", "Auto-set chamber temp preset to ABS");
-          } else if (filament_upper == "ASA") {
-            auto call = id(filament_temp_preset).make_call();
-            call.set_option("ASA");
-            call.perform();
-            ESP_LOGI("bambu", "Auto-set chamber temp preset to ASA");
-          } else if (filament_upper == "PA" || filament_upper == "NYLON") {
-            auto call = id(filament_temp_preset).make_call();
-            call.set_option("Nylon");
-            call.perform();
-            ESP_LOGI("bambu", "Auto-set chamber temp preset to Nylon");
+            
+            ESP_LOGI("bambu", "Auto-set chamber temp preset to %s (from filament type: %s)", 
+                     preset_name.c_str(), filament.c_str());
           } else {
-            ESP_LOGW("bambu", "Unknown filament type: %s - keeping current preset", filament.c_str());
+            ESP_LOGW("bambu", "Unknown filament type: %s - keeping current preset", 
+                     filament.c_str());
           }
 
 esp8266:
@@ -275,12 +358,12 @@ uart:
     baud_rate: ${baud_rate}
     data_bits: 8
     parity: NONE
-    stop_bits: 1
+    stop_bits: 1   
     debug:
       direction: BOTH
       dummy_receiver: false
       after:
-        delimiter: "\n"
+        delimiter: "\n"    
       sequence:
         - lambda: |-
             if (id(modbus_debugging)) {
@@ -824,31 +907,38 @@ select:
     options:
       - "Off"
       - "PLA"
+      - "TPU"
       - "PETG"
+      - "PCTG"
       - "ABS"
       - "ASA"
-      - "Nylon"
+      - "PC"
+      - "PET"
+      - "PA"
+      - "PA6"
+      - "PA12"
+      - "PA612"
+      - "PPA"
+      - "PP"
+      - "PE"
+      - "PAHT"
       - "User-defined"
     initial_option: "User-defined"
     on_value:
       then:
         - lambda: |-
             if (x == "Off") {
-              // "Off" preset triggers emergency stop to safely disable heater
               id(emergency_stop).turn_on();
               ESP_LOGI("preset", "Emergency stop activated");
               return;
             }
-
+            
             if (x == "User-defined") {
-              // User-defined mode - no automatic threshold changes
               ESP_LOGI("preset", "User-defined mode selected");
               return;
             }
-
-            // Look up preset from global map and set thresholds
-            // Presets use ±1 degree hysteresis (e.g., PLA: 21-23°C for 22°C target)
-            // This prevents rapid on/off cycling (relay chatter)
+            
+            // Look up preset temperatures
             auto it = id(filament_presets).find(x);
             if (it != id(filament_presets).end()) {
               float temp_start = it->second.first;
@@ -862,16 +952,13 @@ select:
               call_stop.set_value(temp_stop);
               call_stop.perform();
               
-              if (id(emergency_stop).state == 1) {             
+              if (id(emergency_stop).state == 1) {
                 id(emergency_stop).turn_off();
                 ESP_LOGI("preset", "Emergency stop deactivated");
-                return;
               }
-
+              
               ESP_LOGI("preset", "%s mode set (%.1f${temp_unit_label} - %.1f${temp_unit_label})",
                        x.c_str(), temp_start, temp_stop);
-            } else {
-              ESP_LOGW("preset", "Preset '%s' not found in filament_presets", x.c_str());
             }
     entity_category: config
     id: filament_temp_preset
