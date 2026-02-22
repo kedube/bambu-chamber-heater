@@ -23,7 +23,7 @@ substitutions:
   device_description: "ESP8285-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
   device_area: "Office"
   bambu_printer_entity_id: !secret bambu_printer_id
-  sw_version: "1.5.1"
+  sw_version: "1.5.2"
   pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
@@ -70,81 +70,24 @@ globals:
     restore_value: no
     initial_value: |-
       {
-        // PLA variants
-        {"PLA", "PLA"},
-        {"PLA SILK", "PLA"},
-        {"PLA+", "PLA"},
-        {"PLA-CF", "PLA"},
-        {"MATTE PLA", "PLA"},
-        {"PLA HIGH SPEED", "PLA"},
-        
-        // TPU variants
-        {"TPU", "TPU"},
-        {"TPU 95A", "TPU"},
-        {"TPU 85A HF", "TPU"},
-        
-        // PETG variants
-        {"PETG", "PETG"},
-        {"PETG HF", "PETG"},
-        {"PETG-CF", "PETG"},
-        {"PETG-RCF", "PETG"},
-        {"PETG-ESD", "PETG"},
-        
-        // PCTG variants
+        {"PLA", "PLA"}, {"PLA SILK", "PLA"}, {"PLA+", "PLA"}, {"PLA-CF", "PLA"}, 
+        {"MATTE PLA", "PLA"}, {"PLA HIGH SPEED", "PLA"},
+        {"TPU", "TPU"}, {"TPU 95A", "TPU"}, {"TPU 85A HF", "TPU"},
+        {"PETG", "PETG"}, {"PETG HF", "PETG"}, {"PETG-CF", "PETG"}, 
+        {"PETG-RCF", "PETG"}, {"PETG-ESD", "PETG"},
         {"PCTG", "PCTG"},
-        
-        // ABS variants
-        {"ABS", "ABS"},
-        {"ABS-GF", "ABS"},
-        
-        // ASA variants
-        {"ASA", "ASA"},
-        {"ASA-CF", "ASA"},
-        {"ASA-AERO", "ASA"},
-        
-        // PC variants
-        {"PC", "PC"},
-        {"PC FR", "PC"},
-        
-        // PET variants
-        {"PET", "PET"},
-        {"PET-CF", "PET"},
-        
-        // PA variants
-        {"PA", "PA"},
-        {"PA-CF", "PA"},
-        
-        // PA6 variants
-        {"PA6", "PA6"},
-        {"PA6-GF", "PA6"},
-        {"PA6-CF", "PA6"},
-        
-        // PA12 variants
-        {"PA12", "PA12"},
-        {"PA12-CF", "PA12"},
-        
-        // PA612 variants
-        {"PA612", "PA612"},
-        {"PA612-CF", "PA612"},
-        
-        // PPA variants
-        {"PPA-GF", "PPA"},
-        {"PPA-CF", "PPA"},
-        
-        // PP variants
-        {"PP", "PP"},
-        {"PP-GF", "PP"},
-        {"PP-CF", "PP"},
-        
-        // PPS variants
-        {"PPS", "PPS"},
-        {"PPS-CF", "PPS"},
-        
-        // PE variants
-        {"PE", "PE"},
-        {"PE-CF", "PE"},
-        
-        // PAHT variants
+        {"ABS", "ABS"}, {"ABS-GF", "ABS"},
+        {"ASA", "ASA"}, {"ASA-CF", "ASA"}, {"ASA-AERO", "ASA"},
+        {"PC", "PC"}, {"PC FR", "PC"},
+        {"PET", "PET"}, {"PET-CF", "PET"},
+        {"PA", "PA"}, {"PA-CF", "PA"},
+        {"PA6", "PA6"}, {"PA6-GF", "PA6"}, {"PA6-CF", "PA6"},
+        {"PA12", "PA12"}, {"PA12-CF", "PA12"},
+        {"PA612", "PA612"}, {"PA612-CF", "PA612"},
+        {"PPA-GF", "PPA"}, {"PPA-CF", "PPA"},
+        {"PP", "PP"}, {"PP-GF", "PP"}, {"PP-CF", "PP"},
+        {"PPS", "PPS"}, {"PPS-CF", "PPS"},
+        {"PE", "PE"}, {"PE-CF", "PE"},
         {"PAHT-CF", "PAHT"}
       }
   # Restart confirmation flag - user must enable before restarting
@@ -234,10 +177,26 @@ script:
                 format: "Restart confirmation timed out"
                 level: INFO
             - switch.turn_off: restart_confirmation
+  # Centralized emergency stop trigger with reason logging
+  # Consolidates emergency stop logic to ensure consistent logging
+  - id: trigger_emergency_stop
+    mode: restart
+    parameters:
+      reason: string
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return !id(emergency_stop).state;
+          then:
+            - lambda: |-
+                ESP_LOGE("safety", "EMERGENCY: %s", reason.c_str());
+            - switch.turn_on: emergency_stop
+
   # Safety check for Bambu printer connectivity
   # Forces emergency stop whenever printer online sensor is OFF
   - id: check_bambu_printer_online
-    mode: queued
+    mode: restart
     then:
       - if:
           condition:
@@ -245,39 +204,44 @@ script:
               return id(boot_complete) &&
                      !id(bambu_printer_online).state;
           then:
-            - logger.log:
-                format: "EMERGENCY: Bambu 3D Printer is offline - forcing emergency stop"
-                level: WARN
-            - switch.turn_on: emergency_stop
+            - script.execute:
+                id: trigger_emergency_stop
+                reason: "Bambu 3D Printer is offline"
+
   # Auto-select chamber temperature preset based on Bambu printer's filament type
   # Reads current filament type and sets appropriate chamber heating preset
   - id: auto_select_filament_preset
-    mode: queued
+    mode: restart
     then:
       - lambda: |-
-          std::string filament = id(bambu_filament_type).state;
-          std::string filament_upper = filament;
-          
-          // Convert to uppercase
-          std::transform(filament_upper.begin(), filament_upper.end(),
-                       filament_upper.begin(), ::toupper);
-          
-          // Look up preset name from filament type
+          const std::string& filament_raw = id(bambu_filament_type).state;
+
+          // Pre-allocate string with exact size needed
+          std::string filament_upper;
+          filament_upper.reserve(filament_raw.length());
+
+          // Convert to uppercase without creating temporary strings
+          for (char c : filament_raw) {
+            filament_upper += std::toupper(static_cast<unsigned char>(c));
+          }
+
+          // Look up preset name from filament type (single map lookup)
           auto type_it = id(filament_type_map).find(filament_upper);
-          
+
           if (type_it != id(filament_type_map).end()) {
-            std::string preset_name = type_it->second;
-            
+            // Use reference to avoid string copy
+            const std::string& preset_name = type_it->second;
+
             // Set the preset
             auto call = id(filament_temp_preset).make_call();
             call.set_option(preset_name);
             call.perform();
-            
+
             ESP_LOGI("bambu", "Auto-set chamber temp preset to %s (from filament type: %s)", 
-                     preset_name.c_str(), filament.c_str());
+                     preset_name.c_str(), filament_raw.c_str());
           } else {
             ESP_LOGW("bambu", "Unknown filament type: %s - keeping current preset", 
-                     filament.c_str());
+                     filament_raw.c_str());
           }
 
 esp8266:
@@ -297,12 +261,15 @@ esphome:
       - script.execute: write_temp_unit
       # Wait for initial modbus synchronization before enabling emergency checks
       # Prevents false emergency stops during boot
-      - delay: 30s
+      - delay: 15s
       - lambda: |-
           id(boot_complete) = true;
           ESP_LOGI("boot", "Boot complete - emergency stop checks now active");
       - script.execute: check_bambu_printer_online
-  #platformio_options:
+  platformio_options:
+    build_flags: 
+      - -Os # Optimize for size to fit within 1MB flash of ESP8285
+      - -DNDEBUG # Disable debug assertions
   #  upload_port: ${device_name} + ".local"
   #  upload_flags: -a !secret ota_password
   #  upload_protocol: espota
@@ -313,8 +280,24 @@ api:
   encryption:
     key: !secret encryption_key
 
+  on_client_connected:
+    then:
+      - lambda: |-
+          id(api_connection) = true;
+  on_client_disconnected:
+    then:
+      - if:
+          condition:
+            lambda: 'return id(api_connection);'
+          then:
+            - lambda: |-
+                id(api_connection) = false;
+            - script.execute:
+                id: trigger_emergency_stop
+                reason: "Home Assistant API connection lost"
+
 logger:
-  level: DEBUG
+  level: INFO
   # Log Levels: NONE, ERROR, WARN, INFO, DEBUG, VERBOSE, VERY_VERBOSE
   # Disable logging via UART, since we're using this for modbus communication
   baud_rate: 0 #Serial logging can be disabled by setting baud_rate: 0.
@@ -438,9 +421,8 @@ modbus_controller:
     modbus_id: modbus1
     setup_priority: -10
     update_interval: ${modbus_update_interval}
-    command_throttle: 300ms
+    command_throttle: 200ms
     
-
 sensor:
   - platform: modbus_controller
     modbus_controller_id: modbus_device
@@ -516,7 +498,9 @@ sensor:
                        x > id(high_temp_alarm).state &&
                        !id(emergency_stop).state;
             then:
-              - switch.turn_on: emergency_stop
+              - script.execute:
+                  id: trigger_emergency_stop
+                  reason: "High temperature alarm exceeded"
               - lambda: |-
                   ESP_LOGE("safety",
                     "EMERGENCY: Temperature %.1f%s exceeds High Temperature Alarm: %.1f%s",
@@ -542,7 +526,9 @@ sensor:
                        x < id(low_temp_alarm).state &&
                        !id(emergency_stop).state;
             then:
-              - switch.turn_on: emergency_stop
+              - script.execute:
+                  id: trigger_emergency_stop
+                  reason: "Low temperature alarm exceeded"
               - lambda: |-
                   ESP_LOGE("safety",
                     "EMERGENCY: Temperature %.1f%s below Low Temperature Alarm: %.1f%s (possible sensor failure)",
@@ -635,8 +621,9 @@ text_sensor:
             then:
               # Sensor disconnection is critical - cannot safely operate without temperature data
               # Force emergency stop immediately
-              - switch.turn_on: emergency_stop
-              - lambda: 'ESP_LOGE("safety", "EMERGENCY: Temperature sensor disconnected, forcing emergency stop");'
+              - script.execute:
+                  id: trigger_emergency_stop
+                  reason: "Temperature sensor disconnected"
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -761,7 +748,7 @@ text_sensor:
       sprintf(p, "ago");
 
       return std::string(buffer);
-    update_interval: 5s
+    update_interval: 10s
     web_server:
       sorting_group_id: sorting_group_system
 
@@ -920,6 +907,7 @@ select:
       - "PA612"
       - "PPA"
       - "PP"
+      - "PPS"
       - "PE"
       - "PAHT"
       - "User-defined"
@@ -1162,27 +1150,9 @@ interval:
           then:
             - lambda: |-
                 id(comms_fault_latched) = true;
-                ESP_LOGE("safety", "EMERGENCY: Temperature telemetry stale for >${comms_timeout_ms}ms, forcing emergency stop");
-            - switch.turn_on: emergency_stop
-
-  - interval: 180s
-    then:
-      # Check Home Assistant API communication
-      - if:
-          condition:
-            lambda: 'return { (id(api_connection) != true) };'
-          then:
-            - if:
-                condition: # Check if it is *now* connected
-                  api.connected: # Check if it is now connected
-                then:
-                  # Actions when just connected
-                  - lambda: "id(api_connection) = true;"
-                else:
-                  - lambda: |-
-                      id(api_connection) = false;
-                      ESP_LOGW("safety", "EMERGENCY: Home Assistant API connection lost, forcing emergency stop");
-                  - switch.turn_on: emergency_stop
+            - script.execute:
+                id: trigger_emergency_stop
+                reason: "Temperature telemetry stale for >${comms_timeout_ms}ms"
     
 web_server:
   port: 80
