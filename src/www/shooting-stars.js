@@ -9,9 +9,16 @@
     // Check for reduced motion preference
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    // Configuration
+    // Configuration constants
     const STAR_COUNT = 10;
     const STAR_COLOR = '#7dd3fc';
+    const MOBILE_BREAKPOINT = 750;
+    const STAGGER_DURATION = 10; // seconds
+    const TAIL_LENGTH_MIN = 500; // hundredths of em
+    const TAIL_LENGTH_MAX = 750; // hundredths of em
+    const TOP_OFFSET_MAX = 10000; // hundredths of vh
+    const FALL_DURATION_MIN = 6000; // milliseconds
+    const FALL_DURATION_MAX = 12000; // milliseconds
     const dpr = window.devicePixelRatio || 1;
     const starHeight = Math.max(2, Math.round(2 * dpr)); // HiDPI support
 
@@ -22,16 +29,16 @@
 
     // Generate CSS for individual stars with staggered delays
     function generateStarStyles() {
-        let styles = '';
+        const styles = new Array(STAR_COUNT);
 
         for (let i = 1; i <= STAR_COUNT; i++) {
-            const tailLength = randomRange(500, 750) / 100;
-            const topOffset = randomRange(0, 10000) / 100;
-            const fallDuration = randomRange(6000, 12000) / 1000;
+            const tailLength = randomRange(TAIL_LENGTH_MIN, TAIL_LENGTH_MAX) / 100;
+            const topOffset = randomRange(0, TOP_OFFSET_MAX) / 100;
+            const fallDuration = randomRange(FALL_DURATION_MIN, FALL_DURATION_MAX) / 1000;
             // Stagger delays evenly to ensure constant visual interest
-            const fallDelay = ((i - 1) / STAR_COUNT) * 10;
+            const fallDelay = ((i - 1) / STAR_COUNT) * STAGGER_DURATION;
 
-            styles += `
+            styles[i - 1] = `
                 .star:nth-child(${i}) {
                     --star-tail-length: ${tailLength}em;
                     --top-offset: ${topOffset}vh;
@@ -41,7 +48,7 @@
             `;
         }
 
-        return styles;
+        return styles.join('');
     }
 
     // Inject CSS styles
@@ -94,16 +101,17 @@
             transform: translate3d(104em, 0, 0);
             animation: fall var(--fall-duration) var(--fall-delay) linear infinite,
                        tail-fade var(--tail-fade-duration) var(--fall-delay) ease-out infinite;
+            will-change: transform, opacity;
         }
 
         /* Mobile optimization - remove drop-shadow and tail-fade for performance */
-        @media screen and (min-width: 751px) {
+        @media screen and (min-width: ${MOBILE_BREAKPOINT + 1}px) {
             .star {
                 filter: drop-shadow(0 0 6px currentColor);
             }
         }
 
-        @media screen and (max-width: 750px) {
+        @media screen and (max-width: ${MOBILE_BREAKPOINT}px) {
             .star {
                 animation: fall var(--fall-duration) var(--fall-delay) linear infinite;
             }
@@ -200,29 +208,30 @@
         const starsContainer = document.createElement('div');
         starsContainer.className = 'stars';
 
-        // Create individual stars
+        // Create individual stars using document fragment (single reflow)
+        const fragment = document.createDocumentFragment();
         for (let i = 0; i < STAR_COUNT; i++) {
             const star = document.createElement('div');
             star.className = 'star';
-            starsContainer.appendChild(star);
+            fragment.appendChild(star);
         }
+        starsContainer.appendChild(fragment);
 
         // Insert at the beginning of body (after background)
         document.body.insertBefore(starsContainer, document.body.children[1] || null);
+
+        // Cache star elements for visibility handler
+        const stars = starsContainer.querySelectorAll('.star');
 
         // Pause/resume animations based on page visibility (battery optimization)
         let animationsPaused = false;
         document.addEventListener('visibilitychange', () => {
             if (document.hidden && !animationsPaused && !prefersReducedMotion) {
-                starsContainer.style.animationPlayState = 'paused';
-                const stars = starsContainer.querySelectorAll('.star');
                 stars.forEach(star => {
                     star.style.animationPlayState = 'paused';
                 });
                 animationsPaused = true;
             } else if (!document.hidden && animationsPaused && !prefersReducedMotion) {
-                starsContainer.style.animationPlayState = 'running';
-                const stars = starsContainer.querySelectorAll('.star');
                 stars.forEach(star => {
                     star.style.animationPlayState = 'running';
                 });
@@ -230,20 +239,6 @@
             }
         });
     }
-
-    // Debounced resize handler for responsive adjustments
-    let resizeTimeout;
-    window.addEventListener('resize', () => {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(() => {
-            // Re-calculate rotation if needed for orientation changes
-            const starsContainer = document.querySelector('.stars');
-            if (starsContainer && window.innerHeight > window.innerWidth) {
-                // Portrait mode - adjust rotation for better visibility
-                starsContainer.style.transform = 'rotate(-45deg)';
-            }
-        }, 250);
-    });
 
     // Initialize when DOM is ready
     if (document.readyState === 'loading') {

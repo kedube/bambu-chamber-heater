@@ -23,7 +23,7 @@ substitutions:
   device_description: "ESP8285-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
   device_area: "Office"
   bambu_printer_entity_id: !secret bambu_printer_id
-  sw_version: "1.5.2"
+  sw_version: "1.5.3"
   pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
@@ -55,6 +55,12 @@ substitutions:
   # Must be > 3x modbus_update_interval (10s) to avoid false positives
   # Checked every 30s by interval task
   comms_timeout_ms: "90000"
+  watchdog_interval: "30s"
+  emergency_check_delay: "15s" # Delay after boot before enabling emergency stop checks to allow sensor sync
+  # Set to "true" to hide sleep switch if not supported by controller, "false" to show it
+  hide_sleep_switch: "true"
+  # Set to "true" to hide backlight select switch if not supported by controller, "false" to show it
+  hide_backlight_setting: "true"
 
 packages:
   select_units: !include 
@@ -216,31 +222,25 @@ script:
       - lambda: |-
           const std::string& filament_raw = id(bambu_filament_type).state;
 
-          // Pre-allocate string with exact size needed
+          // Convert to uppercase efficiently using transform
           std::string filament_upper;
           filament_upper.reserve(filament_raw.length());
+          std::transform(filament_raw.begin(), filament_raw.end(),
+                         std::back_inserter(filament_upper),
+                         [](unsigned char c){ return std::toupper(c); });
 
-          // Convert to uppercase without creating temporary strings
-          for (char c : filament_raw) {
-            filament_upper += std::toupper(static_cast<unsigned char>(c));
-          }
-
-          // Look up preset name from filament type (single map lookup)
+          // Single map lookup
           auto type_it = id(filament_type_map).find(filament_upper);
 
           if (type_it != id(filament_type_map).end()) {
-            // Use reference to avoid string copy
-            const std::string& preset_name = type_it->second;
-
-            // Set the preset
             auto call = id(filament_temp_preset).make_call();
-            call.set_option(preset_name);
+            call.set_option(type_it->second);
             call.perform();
 
-            ESP_LOGI("bambu", "Auto-set chamber temp preset to %s (from filament type: %s)", 
-                     preset_name.c_str(), filament_raw.c_str());
+            ESP_LOGI("bambu", "Auto-set chamber temp preset to %s (from filament type: %s)",
+                     type_it->second.c_str(), filament_raw.c_str());
           } else {
-            ESP_LOGW("bambu", "Unknown filament type: %s - keeping current preset", 
+            ESP_LOGW("bambu", "Unknown filament type: %s - keeping current preset",
                      filament_raw.c_str());
           }
 
@@ -261,7 +261,7 @@ esphome:
       - script.execute: write_temp_unit
       # Wait for initial modbus synchronization before enabling emergency checks
       # Prevents false emergency stops during boot
-      - delay: 15s
+      - delay: ${emergency_check_delay}
       - lambda: |-
           id(boot_complete) = true;
           ESP_LOGI("boot", "Boot complete - emergency stop checks now active");
@@ -297,7 +297,7 @@ api:
                 reason: "Home Assistant API connection lost"
 
 logger:
-  level: INFO
+  level: DEBUG
   # Log Levels: NONE, ERROR, WARN, INFO, DEBUG, VERBOSE, VERY_VERBOSE
   # Disable logging via UART, since we're using this for modbus communication
   baud_rate: 0 #Serial logging can be disabled by setting baud_rate: 0.
@@ -677,7 +677,7 @@ text_sensor:
     id: wifi_ssid
     icon: "mdi:wifi"
     lambda: |-
-      return std::string(!WiFi.SSID().isEmpty() ? WiFi.SSID().c_str() : "Not Connected");
+      return WiFi.isConnected() ? std::string(WiFi.SSID().c_str()) : std::string("Not Connected");
     web_server:
       sorting_group_id: sorting_group_diagnostic
 
@@ -727,27 +727,21 @@ text_sensor:
       // Uses unsigned arithmetic - safely handles millis() wraparound at ~49.7 days
       unsigned long elapsed_sec = (millis() - id(emergency_stop_timestamp)) / 1000;
 
-      // Calculate time components (days, hours, minutes, seconds)
-      unsigned long days = elapsed_sec / (24UL * 3600);
-      unsigned long remaining = elapsed_sec % (24UL * 3600);
+      // Calculate time components
+      unsigned long days = elapsed_sec / 86400;
+      unsigned long hours = (elapsed_sec % 86400) / 3600;
+      unsigned long minutes = (elapsed_sec % 3600) / 60;
+      unsigned long seconds = elapsed_sec % 60;
 
-      unsigned long hours = remaining / 3600;
-      remaining %= 3600;
+      // Build output string efficiently using to_string
+      std::string result;
+      if (days > 0) result += std::to_string(days) + "d ";
+      if (hours > 0) result += std::to_string(hours) + "h ";
+      if (minutes > 0) result += std::to_string(minutes) + "m ";
+      if (seconds > 0 || elapsed_sec == 0) result += std::to_string(seconds) + "s ";
+      result += "ago";
 
-      unsigned long minutes = remaining / 60;
-      unsigned long seconds = remaining % 60;
-
-      // Build the output string using single buffer allocation (more efficient than string concatenation)
-      char buffer[64];
-      char* p = buffer;
-
-      if (days > 0) p += sprintf(p, "%lud ", days);
-      if (hours > 0) p += sprintf(p, "%luh ", hours);
-      if (minutes > 0) p += sprintf(p, "%lum ", minutes);
-      if (seconds > 0 || p == buffer) p += sprintf(p, "%lus ", seconds);
-      sprintf(p, "ago");
-
-      return std::string(buffer);
+      return result;
     update_interval: 10s
     web_server:
       sorting_group_id: sorting_group_system
@@ -771,12 +765,12 @@ text_sensor:
               // Print started - auto-select chamber temp based on current filament
               ESP_LOGI("bambu", "Print started, auto-selecting chamber temperature");
             }
-        - if:
-            condition:
-              lambda: |-
-                return x == "running" || x == "prepare" || x == "slicing";
-            then:
-              - script.execute: auto_select_filament_preset
+        - lambda: |-
+            // Cache printer status to avoid repeated comparisons
+            bool is_printing = (x == "running" || x == "prepare" || x == "slicing");
+            if (is_printing) {
+              id(auto_select_filament_preset)->execute();
+            }
 
   - platform: homeassistant
     name: "Bambu Active Filament Type"
@@ -788,15 +782,13 @@ text_sensor:
       then:
         - lambda: |-
             ESP_LOGI("bambu", "Active filament type changed to: %s", x.c_str());
-        - if:
-            condition:
-              lambda: |-
-                // Only auto-select if printer is actively printing or preparing
-                return id(bambu_printer_status).state == "running" ||
-                       id(bambu_printer_status).state == "prepare" ||
-                       id(bambu_printer_status).state == "slicing";
-            then:
-              - script.execute: auto_select_filament_preset
+        - lambda: |-
+            // Only auto-select if printer is actively printing or preparing
+            const auto& status = id(bambu_printer_status).state;
+            bool is_printing = (status == "running" || status == "prepare" || status == "slicing");
+            if (is_printing) {
+              id(auto_select_filament_preset)->execute();
+            }
     web_server:
       sorting_group_id: sorting_group_diagnostic
 
@@ -847,6 +839,7 @@ number:
     entity_category: config
     id: backlight_level
     icon: "mdi:lightbulb"
+    internal: ${hide_backlight_setting} # Hide if not supported by device
     web_server:
       sorting_group_id: sorting_group_settings
 
@@ -1040,6 +1033,7 @@ switch:
     use_write_multiple: false
     entity_category: config
     id: sleep_switch
+    internal: ${hide_sleep_switch}
     icon: "mdi:power-sleep"
     web_server:
       sorting_group_id: sorting_group_settings
@@ -1134,7 +1128,7 @@ interval:
   # Communication watchdog - monitors for stale temperature data
   # Checks every 30 seconds if temperature updates are being received
   # Triggers emergency stop if no updates for comms_timeout_ms (90s)
-  - interval: 30s
+  - interval: ${watchdog_interval}
     then:
       # Check Modbus temperature communication
       - if:
@@ -1177,4 +1171,3 @@ web_server:
     - id: sorting_group_system
       name: "System Management"
       sorting_weight: 4
-      
