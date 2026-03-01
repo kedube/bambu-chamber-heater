@@ -30,11 +30,33 @@ This project allows you to intelligently manage your chamber heater by turning i
 ## Requirements
 Make sure you have the following before proceeding:
 
-- ESPHome build environment installed locally (instructions below).
-- USB-to-TTL UART Programmer (Note: I highly recommend FTDI-based programmers)
-- Bambu P1S / X1 Carbon 3D Printer
-- Sinilink XY-SA/ST temperature controller with XY-WFPOW wireless module
+### Software
+- ESPHome build environment installed locally (instructions below)
 - Home Assistant with [Bambu Lab HA integration](https://github.com/greghesp/ha-bambulab) installed
+
+### Hardware
+- Bambu P1S / X1 Carbon 3D Printer
+- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller with XY-WFPOW (ESP8285-based) wireless module
+- NOYITO AC 100V-264V to DC 24V 1A Power Supply Module (powers the 24V Fan only)
+- AC 120/240V PTC Heater 200-250W (no need to be more powerful than this)
+- 24V 4020 Fan (Used: SUNON MF40202VX-1000U-A99 with 10.8CFM airflow)
+- (2) 3-Way WAGO Connectors
+- 16Ga Silicon Wiring (Used: red and black wiring) 
+- Heat set inserts: (15) M3x4x5 + (1) M2x2.5x3.2
+- Screws: 
+  - (7) M3x5MM or 6MM button screws for covers
+  - (2) M3x25MM hex head screws for lower aux fan screws
+  - (4) M3x25MM hex head screws for 24V Fan
+  - (4) M3x4MM button screws for NOYITO AC to DC Power Supply Module
+  - (2) M3x8MM hex head screws to connect housing to printer bottom
+  - (4) M4x6MM or 8MM self-tapping screws to hold PTC in housing without fan
+  - (2) M4x12MM button screws to hold PTC heater to front cover
+  - (2) M4 self-locking nuts to connect PTC heater to front cover
+  - (1) M2x3MM machine screw to hold wireless module to housing
+- (1) XT30 connector pair set (both ends) to allow the chamber heater to be removed
+- Heatshrink tubing (for XT30 connectors)
+- Soldering equipment (depending installation method)
+- USB-to-TTL UART Programmer (Note: I highly recommend FTDI-based programmers)
 
 ## References
 - [Sinilink XY-ST/SA Remote Thermostat Datasheet](https://myosuploads3.banggood.com/products/20240220/20240220213226STSA-EN.pdf)
@@ -109,7 +131,7 @@ git clone https://github.com/kedube/bambu-chamber-heater
 cd bambu-chamber-heater
 ```
 
-### 3. Configure Secrets
+### 3. Configure Secrets & Settings
 Copy the default secrets file and update it with your credentials & Wi-Fi:
 ```
 cp secrets-example.yaml secrets.yaml
@@ -129,6 +151,9 @@ ota_password: ""
 # Generate a random 32-byte encryption key for the API and paste it here or visit https://esphome.io/components/api/ to generate one. 
 # This is required if you want to use integrate with Home Assistant.
 encryption_key: ""
+# Bambu printer ID only (without "binary_sensor." and without "_online"),
+# e.g. "x1c_00x00b123401012" which becomes "binary_sensor.x1c_00x00b123401012_online"
+bambu_printer_id: ""
 # Static IP configuration (uncomment and set values if needed)
 #static_ip: ""
 #gateway: ""
@@ -138,6 +163,34 @@ encryption_key: ""
 ```
 
 Generate a valid 32-byte encryption key (see: [ESPHome.io](https://esphome.io/components/api/)), and insert it under `encryption_key`.
+
+In temperature_controller.yaml, there are also a number of settings you can configure if you like in the substitutions: section:
+```
+substitutions:
+  device_name: "chamber-heater"
+  friendly_name: "Chamber Heater Controller"
+  device_description: "ESP8285-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
+  device_area: "Office"
+  bambu_printer_entity_id: !secret bambu_printer_id
+  sw_version: "1.5.3"
+  pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pctg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  abs_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  asa_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pc_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pet_temp: "50" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa_temp: "60" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa6_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa12_temp: "60" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa612_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  ppa_temp: "70" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pps_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pp_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pe_temp: "75" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  paht_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+```
 
 ### 4. Choose Temperature Unit
 By default, the code uses Celsius. To use Fahrenheit, uncomment the appropriate yaml package in 'temperature_controller.yaml':
