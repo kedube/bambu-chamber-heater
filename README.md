@@ -36,7 +36,7 @@ Make sure you have the following before proceeding:
 
 ### Hardware
 - Bambu P1S / X1 Carbon 3D Printer
-- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller with XY-WFPOW (ESP8285-based) wireless module
+- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller with XY-WFPOW (ESP8285-based) wireless module (no need to get the SA30 since the SA10 can handles nearly 5 times the amperage for a 250W heater)
 - NOYITO AC 100V-264V to DC 24V 1A Power Supply Module (powers the 24V Fan only)
 - AC 120/240V PTC Heater 200-250W (no need to be more powerful than this)
 - 24V 4020 Fan (Used: SUNON MF40202VX-1000U-A99 with 10.8CFM airflow)
