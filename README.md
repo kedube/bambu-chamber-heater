@@ -50,12 +50,12 @@ Make sure you have the following before proceeding:
   - (4) M3x4MM button screws for NOYITO AC to DC Power Supply Module
   - (2) M3x8MM hex head screws to connect housing to printer bottom
   - (4) M4x6MM or 8MM self-tapping screws to hold PTC in housing without fan
-  - (2) M4x12MM button screws to hold PTC heater to front cover
-  - (2) M4 self-locking nuts to connect PTC heater to front cover
-  - (1) M2x3MM machine screw to hold wireless module to housing
+  - (2) M4x12MM button screws to hold the PTC heater to the front cover
+  - (2) M4 self-locking nuts to connect the PTC heater to the front cover
+  - (1) M2x3MM machine screw to hold the wireless module to the housing
 - (1) XT30 connector pair set (both ends) to allow the chamber heater to be removed
 - Heatshrink tubing (for XT30 connectors)
-- Soldering equipment (depending installation method)
+- Soldering equipment (depending on the installation method)
 - USB-to-TTL UART Programmer (Note: I highly recommend FTDI-based programmers)
 
 ## References
@@ -322,7 +322,8 @@ By default, when a print starts, the controller checks the selected filament typ
 When the print completes or fails, the chamber heater is automatically turned off. No need to manually create automation scripts in Home Assistant. 
 
 ## Known Issues
-- The Sinilink Modbus addresses for **Sleep Switch** (`0x0014`) and **Backlight Grade** (`0x0015`) do not appear to have any effect. This may be due to limitations in the XY-SA10 controller I'm using for development or misinterpretation of Modbus address information.
+- The Sinilink Modbus addresses for **Sleep Switch** (`0x0014`) and **Backlight Grade** (`0x0015`) do not appear to have any effect. This may be due to limitations in the XY-SA10/SA30 controllers I have been using for development, or to a misinterpretation of Modbus address information. I've commented this out for the time being.
+- If you mix filament types on the same build plate (PETG supports for PLA), the chamber heater will fluctuate between temperatures based on the filament type you're printing with. 
 
 ## Contributing
 Contributions are welcome!
