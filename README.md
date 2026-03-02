@@ -323,7 +323,7 @@ When the print completes or fails, the chamber heater is automatically turned of
 
 ## Known Issues
 - The Sinilink Modbus addresses for **Sleep Switch** (`0x0014`) and **Backlight Grade** (`0x0015`) do not appear to have any effect. This may be due to limitations in the XY-SA10/SA30 controllers I have been using for development, or to a misinterpretation of Modbus address information. I've commented this out for the time being.
-- If you mix filament types on the same build plate (PETG supports for PLA), the chamber heater will fluctuate between temperatures based on the filament type you're printing with. 
+- If you mix filament types on the same build plate (for example, using PETG supports with PLA), the chamber heater will fluctuate between temperatures based on the filament type you're printing with. 
 
 ## Contributing
 Contributions are welcome!
