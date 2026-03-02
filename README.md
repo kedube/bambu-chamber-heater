@@ -107,6 +107,8 @@ Here is a basic wiring diagram for AC-powered Sinilink XY-SA Series Temperature 
 
 ![Alt Wiring Diagram](images/bambusauna_wiring_diagram.png)
 
+![Alt screenshot](images/bambusauna-3.jpeg)
+
 ![Alt screenshot](images/bambusauna-2.jpeg)
 
 Disclaimer: The author assumes no liability for any injury, damage, or loss resulting from wiring errors, improper installation, or misuse of this project. Electrical work can be hazardous—if you are unsure, consult a qualified professional before proceeding.
