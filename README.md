@@ -215,7 +215,7 @@ esphome run temperature_controller.yaml
 The **XY-WFPOW pinout** can be found here:
 
 - [ESPhome-Sinilink-XY-WFPOW GitHub Repository](https://github.com/creepystefan/ESPhome-Sinilink-XY-WFPOW)
-- [Tasmota's website](https://templates.blakadder.com/sinilink_XY-WFPOW.html)https://templates.blakadder.com/sinilink_XY-WFPOW.html
+- [Tasmota's website](https://templates.blakadder.com/sinilink_XY-WFPOW.html)
 
 Your USB-to-TTL UART programmer **must be set to 3.3 V**. To flash the module, you must connect all **five pins** between the programmer and the XY-WFPOW (including `IO0` to `GND` for flashing).
 
