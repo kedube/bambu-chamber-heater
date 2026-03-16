@@ -1,5 +1,5 @@
 # Bambu Chamber Heater - ESPHome Controller
-ESPHome implementation to remotely control **Sinilink XY-SA/ST series temperature controllers** using the **XY-WFPOW (ESP8285-based) wireless module**. Designed specifically to work with *Bambu Lab P1S/X1 Carbon 3D printers* and integration with Home Assistant or managed with the web interface. 
+ESPHome implementation to remotely control **Sinilink XY-SA/ST series temperature controllers** using the **Waveshare ESP32-C6-Zero wireless module**. Designed specifically to work with *Bambu Lab P1S/X1 Carbon 3D printers* and integration with Home Assistant or managed with the web interface. 
 
 This project allows you to intelligently manage your chamber heater by turning it on/off automatically, linking it with print jobs, and controlling it with automation scripts. Inspired by the [BambuSauna project](https://makerworld.com/en/models/2417482-bambusauna-for-sinilink-xy-sa-st-temp-controller).  
 
@@ -44,12 +44,14 @@ Make sure you have the following before proceeding:
 
 ### Hardware
 - Bambu P1S / X1 Carbon 3D Printer
-- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller with XY-WFPOW (ESP8285-based) wireless module (no need to get the SA30 since the SA10 can handles nearly 5 times the amperage for a 250W heater)
+- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller (no need to get the SA30 since the SA10 can handles nearly 5 times the amperage for a 250W heater)
+- Waveshare ESP32-C6-Zero Wireless Module
 - NOYITO AC 100V-264V to DC 24V 1A Power Supply Module (powers the 24V Fan only)
 - AC 120/240V PTC Heater 200-250W (no need to be more powerful than this)
-- 24V 4020 Fan (Used: SUNON MF40202VX-1000U-A99 with 10.8CFM airflow)
+- 24V 4020 3-Wire Fan (Used: SUNON MF40202VX-1000U-G99 with 10.8CFM airflow)
 - (2) 3-Way WAGO Connectors
 - 16Ga Silicon Wiring (Used: red and black wiring) 
+- 1/4 Watt 10K Ohm Resistor (for 3.3V pull-up power for tach)
 - Heat set inserts: (15) M3x4x5 + (1) M2x2.5x3.2
 - Screws: 
   - (7) M3x5MM or 6MM button screws for covers
@@ -179,10 +181,10 @@ In temperature_controller.yaml, there are also a number of settings you can conf
 substitutions:
   device_name: "chamber-heater"
   friendly_name: "Chamber Heater Controller"
-  device_description: "ESP8285-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
+  device_description: "ESP32-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
   device_area: "Office"
   bambu_printer_entity_id: !secret bambu_printer_id
-  sw_version: "1.5.3"
+  sw_version: "1.6.0"
   pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
@@ -219,30 +221,9 @@ Compile the ESPHome code:
 esphome run temperature_controller.yaml
 ```
 
-### 6. Flash the ESP8285 module with ESPHome
-The **XY-WFPOW pinout** can be found here:
+### 6. Flash the ESP32-C6-Zero module with ESPHome
 
-- [ESPhome-Sinilink-XY-WFPOW GitHub Repository](https://github.com/creepystefan/ESPhome-Sinilink-XY-WFPOW)
-- [Tasmota's website](https://templates.blakadder.com/sinilink_XY-WFPOW.html)https://templates.blakadder.com/sinilink_XY-WFPOW.html
-
-Your USB-to-TTL UART programmer **must be set to 3.3 V**. To flash the module, you must connect all **five pins** between the programmer and the XY-WFPOW (including `IO0` to `GND` for flashing).
-
-![Alt ESP8285 Diagram](https://raw.githubusercontent.com/creepystefan/ESPhome-Sinilink-XY-WFPOW/main/src/docs/devices/sinilink_XY-WFPOW_pinout.jpg)
-```
-    GNG → GND
-    TXD → RXD
-    RXD → TXD
-    IO0 → GND
-    RST (not connected)
-    3V3 → VCC
-```
-
-I used an **8-pin pitch-changer prototype board** to adapt the **1.27 mm** module pins to **2.54 mm** spacing, but only populated 6 pins. The 1.27 mm pins fit snugly into the module’s holes, providing a reliable connection. As an alternative, you can use **24 AWG Ethernet cable**—the bare copper conductors fit tightly into the module’s pin holes and work well for the initial programming.
-
-![Alt Programming Adapter Board 1](images/adapter_board-1.jpeg)
-![Alt Programming Adapter Board 2](images/adapter_board-2.jpeg)
-
-Once ESPHome successfully compiles the YAML configuration, it will prompt you to flash the **ESP8285** module if a USB-to-TTL programmer is connected to your computer.
+Once ESPHome successfully compiles the YAML configuration, it will prompt you to flash the **ESP32** module if the module is connected via USB-C to your computer.
 
 ```
 Linking .pioenvs/bambu-chamber-heater/firmware.elf
@@ -281,7 +262,7 @@ INFO Successfully uploaded program.
 INFO UART logging is disabled (baud_rate=0). Not starting UART logs.
 ```
 
-The USB-to-TTL programmer is required **only for the initial flash**. After that, all future updates can be deployed using **ESPHome Over-The-Air (OTA)** once the configuration compiles successfully.
+A USB-C connection is required **only for the initial flash**. After that, all future updates can be deployed using **ESPHome Over-The-Air (OTA)** once the configuration compiles successfully.
 
 ```
 Linking .pioenvs/bambu-chamber-heater/firmware.elf
@@ -308,7 +289,7 @@ INFO Successfully connected to bambu-chamber-heater @ 192.168.1.27 in 0.034s
 INFO Successful handshake with bambu-chamber-heater @ 192.168.1.27 in 2.847s
 ```
 
-### 6. Connect to the web server running on the ESP8285 module
+### 6. Connect to the web server running on the ESP32 module
 To control the heater, adjust the **Low (start)** and **High (stop)** temperature thresholds.
 You can also use the **Emergency Stop** switch as a manual override to immediately enable or disable the heater.
 
@@ -327,7 +308,7 @@ The LED updates automatically every 2 seconds and immediately responds to WiFi a
 ![Alt Web UI Screenshot](images/screenshot.png)
 
 ### 7. Configure ESPHome integration with Home Assistant
-Once the **ESP8285** module is installed and online, Home Assistant should automatically discover it through the **ESPHome** integration.
+Once the **ESP32** module is installed and online, Home Assistant should automatically discover it through the **ESPHome** integration.
 ion.
 
 Enter the same **encryption key** you defined in the `secrets.yaml` configuration file.
