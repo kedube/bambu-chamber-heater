@@ -22,6 +22,14 @@ This project allows you to intelligently manage your chamber heater by turning i
 - **Communication Watchdog** - Auto-shutoff if Modbus communication is lost for >90 seconds
 - **End of Job** - Auto-shutoff when print is finished
 
+### Status Indication
+- **LED Status Indicator** - WS2812 RGB LED provides instant visual feedback of system state
+  - 🔴 **Solid Red** - Emergency stop active
+  - 🔵 **Pulsing Blue** - WiFi disconnected
+  - 🔴 **Flashing Red** - Over temperature warning (>60°C)
+  - 🟠 **Pulsing Orange** - Heater actively running
+  - 🟢 **Dim Green** - Normal operation (idle/connected)
+
 ### Configuration
 - **Dual Unit Support** - Switch between Celsius and Fahrenheit temperature units
 - **Temperature Calibration** - Adjustable temperature offset for sensor accuracy
@@ -215,7 +223,7 @@ esphome run temperature_controller.yaml
 The **XY-WFPOW pinout** can be found here:
 
 - [ESPhome-Sinilink-XY-WFPOW GitHub Repository](https://github.com/creepystefan/ESPhome-Sinilink-XY-WFPOW)
-- [Tasmota's website](https://templates.blakadder.com/sinilink_XY-WFPOW.html)
+- [Tasmota's website](https://templates.blakadder.com/sinilink_XY-WFPOW.html)https://templates.blakadder.com/sinilink_XY-WFPOW.html
 
 Your USB-to-TTL UART programmer **must be set to 3.3 V**. To flash the module, you must connect all **five pins** between the programmer and the XY-WFPOW (including `IO0` to `GND` for flashing).
 
@@ -301,8 +309,20 @@ INFO Successful handshake with bambu-chamber-heater @ 192.168.1.27 in 2.847s
 ```
 
 ### 6. Connect to the web server running on the ESP8285 module
-To control the heater, adjust the **Low (start)** and **High (stop)** temperature thresholds.  
+To control the heater, adjust the **Low (start)** and **High (stop)** temperature thresholds.
 You can also use the **Emergency Stop** switch as a manual override to immediately enable or disable the heater.
+
+The onboard **WS2812 RGB LED** (connected to GPIO8) provides real-time visual status feedback:
+
+| LED State | Color | Effect | Meaning |
+|-----------|-------|--------|---------|
+| Emergency Stop | Red | Solid | System emergency stopped |
+| WiFi Disconnected | Blue | Fast Pulse | Network connection lost |
+| Over Temperature | Red | Strobe | Temperature >60°C warning |
+| Heating Active | Orange | Slow Pulse | Heater is running |
+| Normal/Idle | Green | Solid (dim) | Everything OK |
+
+The LED updates automatically every 2 seconds and immediately responds to WiFi and emergency stop state changes, providing at-a-glance status without needing to check the web interface or Home Assistant.
 
 ![Alt Web UI Screenshot](images/screenshot.png)
 

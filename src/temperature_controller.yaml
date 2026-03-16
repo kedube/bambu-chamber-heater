@@ -20,10 +20,10 @@
 substitutions:
   device_name: "chamber-heater"
   friendly_name: "Chamber Heater Controller"
-  device_description: "ESP8285-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
+  device_description: "ESP32-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
   device_area: "Office"
   bambu_printer_entity_id: !secret bambu_printer_id
-  sw_version: "1.5.3"
+  sw_version: "1.6.0"
   pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
@@ -55,6 +55,9 @@ substitutions:
   # Must be > 3x modbus_update_interval (10s) to avoid false positives
   # Checked every 30s by interval task
   comms_timeout_ms: "90000"
+  # Fan safety thresholds for print-time interlock
+  fan_min_rpm: "200"
+  fan_fail_timeout_ms: "10000"
   watchdog_interval: "30s"
   emergency_check_delay: "15s" # Delay after boot before enabling emergency stop checks to allow sensor sync
   # Set to "true" to hide sleep switch if not supported by controller, "false" to show it
@@ -152,6 +155,12 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Timestamp when fan RPM first dropped below threshold during an active print
+  # Used to require sustained failure before triggering emergency stop
+  - id: fan_low_rpm_since_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
 
 script:
   # Ensures controller's temperature unit matches the configured unit in this file
@@ -214,6 +223,38 @@ script:
                 id: trigger_emergency_stop
                 reason: "Bambu 3D Printer is offline"
 
+  # Fan safety interlock for active prints
+  # Triggers emergency stop if fan RPM stays below threshold for too long
+  - id: check_fan_failure
+    mode: restart
+    then:
+      - lambda: |-
+          if (!id(boot_complete) || id(emergency_stop).state) {
+            id(fan_low_rpm_since_ms) = 0;
+            return;
+          }
+
+          const float rpm = id(fan_rpm).state;
+          if (isnan(rpm)) {
+            return;
+          }
+
+          if (rpm < ${fan_min_rpm}) {
+            if (id(fan_low_rpm_since_ms) == 0) {
+              id(fan_low_rpm_since_ms) = millis();
+              ESP_LOGW("safety", "Fan RPM below threshold: %.0f RPM (min %s RPM)", rpm, "${fan_min_rpm}");
+              return;
+            }
+
+            if ((millis() - id(fan_low_rpm_since_ms)) >= ${fan_fail_timeout_ms}UL) {
+              id(fan_low_rpm_since_ms) = 0;
+              id(trigger_emergency_stop)->execute("Fan failure detected - RPM below threshold for too long");
+              ESP_LOGE("safety", "EMERGENCY: Fan failure detected - RPM below threshold for too long");
+            }
+          } else {
+            id(fan_low_rpm_since_ms) = 0;
+          }
+
   # Auto-select chamber temperature preset based on Bambu printer's filament type
   # Reads current filament type and sets appropriate chamber heating preset
   - id: auto_select_filament_preset
@@ -244,17 +285,78 @@ script:
                      filament_raw.c_str());
           }
 
-esp8266:
-  board: esp8285
-  restore_from_flash: true
+  # Status LED control - updates LED based on system state
+  # Checks conditions in priority order and sets appropriate color/effect
+  - id: update_status_led
+    mode: restart
+    then:
+      - lambda: |-
+          // Priority order: Emergency > WiFi > Over-temp > Heating > Normal/Idle
+
+          // Emergency stop - solid red
+          if (id(emergency_stop).state) {
+            auto call = id(status_led).turn_on();
+            call.set_rgb(1.0, 0.0, 0.0);
+            call.set_brightness(1.0);
+            call.set_effect("None");
+            call.perform();
+            return;
+          }
+
+          // WiFi disconnected - pulsing blue
+          if (!wifi::global_wifi_component->is_connected()) {
+            auto call = id(status_led).turn_on();
+            call.set_rgb(0.0, 0.0, 1.0);
+            call.set_brightness(0.75);
+            call.set_effect("Fast Pulse");
+            call.perform();
+            return;
+          }
+
+          // Over temperature warning - strobe red
+          auto temp = id(current_temperature).state;
+          if (!isnan(temp) && temp > 60.0) {
+            auto call = id(status_led).turn_on();
+            call.set_effect("Error Strobe");
+            call.perform();
+            return;
+          }
+
+          // Heating active (controller status = "Active") - pulsing orange
+          if (id(controller_status).state == "Active") {
+            auto call = id(status_led).turn_on();
+            call.set_rgb(1.0, 0.5, 0.0);
+            call.set_brightness(0.75);
+            call.set_effect("Slow Pulse");
+            call.perform();
+            return;
+          }
+
+          // Normal/Idle - dim green
+          auto call = id(status_led).turn_on();
+          call.set_rgb(0.0, 1.0, 0.0);
+          call.set_brightness(0.3);
+          call.set_effect("None");
+          call.perform();
+
+esp32:
+  board: esp32-c6-devkitc-1
+  flash_size: 8MB
+  variant: esp32c6
+  cpu_frequency: 160MHz
   framework:
+    type: esp-idf
     version: latest
+    advanced:
+      enable_ota_rollback: true
 
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
   comment: ${device_description}
   area: ${device_area}
+  includes:
+    - ../include/wifi_protocol_helper.h
   on_boot:
     priority: 200
     then:
@@ -270,9 +372,6 @@ esphome:
     build_flags: 
       - -Os # Optimize for size to fit within 1MB flash of ESP8285
       - -DNDEBUG # Disable debug assertions
-  #  upload_port: ${device_name} + ".local"
-  #  upload_flags: -a !secret ota_password
-  #  upload_protocol: espota
 
 # Enable Home Assistant API
 api:
@@ -303,10 +402,38 @@ logger:
   baud_rate: 0 #Serial logging can be disabled by setting baud_rate: 0.
 
 # Enable status LED
-status_led:
-  pin:
-    number: GPIO2
-    inverted: true
+light:
+  - platform: esp32_rmt_led_strip
+    id: status_led
+    name: Status LED
+    pin: GPIO8
+    rgb_order: RGB
+    num_leds: 1
+    chipset: ws2812
+    restore_mode: ALWAYS_OFF
+    effects:
+      - pulse:
+          name: "Slow Pulse"
+          transition_length: 1s
+          update_interval: 1s
+      - pulse:
+          name: "Fast Pulse"
+          transition_length: 0.5s
+          update_interval: 0.5s
+      - strobe:
+          name: "Error Strobe"
+          colors:
+            - state: true
+              brightness: 100%
+              red: 100%
+              green: 0%
+              blue: 0%
+              duration: 500ms
+            - state: false
+              duration: 500ms
+    icon: "mdi:led-on"
+    web_server:
+      sorting_group_id: sorting_group_system
 
 ota:
   # Keep standard ESPHome OTA (Dashboard/CLI)
@@ -331,13 +458,18 @@ wifi:
   #  subnet: !secret subnet
   #  dns1: !secret dns1
   #  dns2: !secret dns2
+  # Update LED immediately on WiFi state changes
+  on_connect:
+    - script.execute: update_status_led
+  on_disconnect:
+    - script.execute: update_status_led
 
 captive_portal:
 
 uart:
   - id: uart_bus
-    tx_pin: GPIO1
-    rx_pin: GPIO3
+    tx_pin: GPIO0
+    rx_pin: GPIO1
     baud_rate: ${baud_rate}
     data_bits: 8
     parity: NONE
@@ -543,7 +675,7 @@ sensor:
       sorting_group_id: sorting_group_sensors
 
   - platform: wifi_signal
-    name: "WiFi Signal Strength"
+    name: "WIFI Signal Strength"
     device_class: signal_strength
     state_class: measurement
     unit_of_measurement: "dBm"
@@ -552,6 +684,32 @@ sensor:
     icon: "mdi:wifi-strength-3"
     web_server:
       sorting_group_id: sorting_group_diagnostic
+
+  - platform: pulse_counter
+    pin:
+      number: GPIO2
+      mode:
+        input: true
+        pullup: true
+    name: "Fan Speed"
+    id: fan_rpm
+    unit_of_measurement: "RPM"
+    accuracy_decimals: 0
+    update_interval: 3s
+    count_mode:
+      rising_edge: DISABLE
+      falling_edge: INCREMENT
+    internal_filter: 13us
+    filters:
+      # 2 pulses per revolution (most 3/4-wire fans)
+      # pulse_counter gives pulses/min, so RPM = pulses/min / 2
+      - multiply: 0.5
+    on_value:
+      then:
+        - script.execute: check_fan_failure
+    icon: "mdi:fan"
+    web_server:
+      sorting_group_id: sorting_group_sensors
 
 binary_sensor:
   - platform: modbus_controller
@@ -671,27 +829,30 @@ text_sensor:
     web_server:
       sorting_group_id: sorting_group_diagnostic
 
-  - platform: template
-    name: "WIFI SSID"
-    entity_category: diagnostic
-    id: wifi_ssid
-    icon: "mdi:wifi"
-    lambda: |-
-      return WiFi.isConnected() ? std::string(WiFi.SSID().c_str()) : std::string("Not Connected");
-    web_server:
-      sorting_group_id: sorting_group_diagnostic
+  - platform: wifi_info
+    ssid:
+      name: "WIFI SSID"
+      entity_category: diagnostic
+      id: wifi_ssid
+      icon: "mdi:wifi"
+      web_server:
+        sorting_group_id: sorting_group_diagnostic
+    ip_address:
+      name: "IP Address"
+      entity_category: diagnostic
+      id: ip_address
+      icon: "mdi:ip"
+      web_server:
+        sorting_group_id: sorting_group_diagnostic
 
   - platform: template
-    name: "IP Address"
+    name: "WIFI Protocol"
     entity_category: diagnostic
-    id: ip_address
-    icon: "mdi:ip"
+    id: wifi_protocol
+    icon: "mdi:wifi-cog"
     lambda: |-
-      if (WiFi.isConnected()) {
-        return std::string(WiFi.localIP().toString().c_str());
-      } else {
-        return std::string("Not Connected");
-      }
+      return get_negotiated_wifi_protocol();
+    update_interval: 30s
     web_server:
       sorting_group_id: sorting_group_diagnostic
  
@@ -771,6 +932,7 @@ text_sensor:
             if (is_printing) {
               id(auto_select_filament_preset)->execute();
             }
+        - script.execute: check_fan_failure
 
   - platform: homeassistant
     name: "Bambu Active Filament Type"
@@ -1014,6 +1176,7 @@ switch:
       - logger.log:
           format: "Emergency stopped enabled"
           level: INFO
+      - script.execute: update_status_led
     on_turn_off:
       - lambda: |-
           // Clear timestamp when emergency is manually cleared
@@ -1022,6 +1185,7 @@ switch:
       - logger.log:
           format: "Emergency stopped disabled"
           level: INFO
+      - script.execute: update_status_led
     web_server:
       sorting_group_id: sorting_group_system
 
@@ -1147,7 +1311,17 @@ interval:
             - script.execute:
                 id: trigger_emergency_stop
                 reason: "Temperature telemetry stale for >${comms_timeout_ms}ms"
-    
+
+  # Backstop fan safety check in case sensor events are delayed
+  - interval: ${watchdog_interval}
+    then:
+      - script.execute: check_fan_failure
+
+  # Status LED update - refreshes LED state every 5 seconds
+  - interval: 5s
+    then:
+      - script.execute: update_status_led
+
 web_server:
   port: 80
   version: 3
