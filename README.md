@@ -111,11 +111,16 @@ Here is a basic wiring diagram for AC-powered Sinilink XY-SA Series Temperature 
 
 ![Alt Wiring Diagram](images/bambusauna_wiring_diagram.png)
 
-![Alt ESP32 Pinout](images/esp-c6-zero-pinout.png)
+![Alt ESP32 Pinout](images/esp32-c6-zero-pinout.png)
 
 ![Alt screenshot](images/esp32-wiring-harness.jpeg)
 
+![Alt screenshot](images/bambusauna-4.jpeg)
+
 ![Alt screenshot](images/bambusauna-esp32.jpeg)
+
+![Alt screenshot](images/bambusauna-2.jpeg)
+
 
 Disclaimer: The author assumes no liability for any injury, damage, or loss resulting from wiring errors, improper installation, or misuse of this project. Electrical work can be hazardous—if you are unsure, consult a qualified professional before proceeding.
 
