@@ -57,6 +57,7 @@ substitutions:
   comms_timeout_ms: "90000"
   # Fan safety thresholds for print-time interlock
   fan_min_rpm: "200"
+  fan_fail_timeout_seconds: "10"
   watchdog_interval: "30s"
   emergency_check_delay: "15s" # Delay after boot before enabling emergency stop checks to allow sensor sync
   # Set to "true" to hide sleep switch if not supported by controller, "false" to show it
@@ -154,6 +155,11 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Timestamp when fan RPM first dropped below threshold while heating is active
+  - id: fan_low_rpm_since_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
 script:
   # Ensures controller's temperature unit matches the configured unit in this file
   # Runs on boot to sync controller if it was changed via physical buttons
@@ -216,23 +222,35 @@ script:
                 reason: "Bambu 3D Printer is offline"
 
   # Fan safety interlock
-  # Immediately disables heating when the controller is active and fan RPM is too low
+  # Triggers emergency stop only after low RPM persists while heating is active
   - id: check_fan_failure
     mode: restart
     then:
       - lambda: |-
           if (!id(boot_complete) || id(emergency_stop).state) {
+            id(fan_low_rpm_since_ms) = 0;
             return;
           }
 
           const float rpm = id(fan_rpm).state;
           if (isnan(rpm) || id(controller_status).state != "Active") {
+            id(fan_low_rpm_since_ms) = 0;
             return;
           }
 
           if (rpm < ${fan_min_rpm}) {
-            id(trigger_emergency_stop)->execute("Fan RPM below threshold while heater is active");
-            ESP_LOGE("safety", "EMERGENCY: Fan RPM %.0f below minimum %s while heater is active", rpm, "${fan_min_rpm}");
+            if (id(fan_low_rpm_since_ms) == 0) {
+              id(fan_low_rpm_since_ms) = millis();
+              return;
+            }
+
+            if ((millis() - id(fan_low_rpm_since_ms)) >= (${fan_fail_timeout_seconds}UL * 1000UL)) {
+              id(fan_low_rpm_since_ms) = 0;
+              id(trigger_emergency_stop)->execute("Fan RPM below threshold while heater is active");
+              ESP_LOGE("safety", "EMERGENCY: Fan RPM %.0f below minimum %s for at least %s seconds while heater is active", rpm, "${fan_min_rpm}", "${fan_fail_timeout_seconds}");
+            }
+          } else {
+            id(fan_low_rpm_since_ms) = 0;
           }
 
   # Auto-select chamber temperature preset based on Bambu printer's filament type
