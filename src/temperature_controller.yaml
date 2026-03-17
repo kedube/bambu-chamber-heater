@@ -57,7 +57,6 @@ substitutions:
   comms_timeout_ms: "90000"
   # Fan safety thresholds for print-time interlock
   fan_min_rpm: "200"
-  fan_fail_timeout_ms: "10000"
   watchdog_interval: "30s"
   emergency_check_delay: "15s" # Delay after boot before enabling emergency stop checks to allow sensor sync
   # Set to "true" to hide sleep switch if not supported by controller, "false" to show it
@@ -155,13 +154,6 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
-  # Timestamp when fan RPM first dropped below threshold during an active print
-  # Used to require sustained failure before triggering emergency stop
-  - id: fan_low_rpm_since_ms
-    type: uint32_t
-    restore_value: no
-    initial_value: '0'
-
 script:
   # Ensures controller's temperature unit matches the configured unit in this file
   # Runs on boot to sync controller if it was changed via physical buttons
@@ -223,36 +215,24 @@ script:
                 id: trigger_emergency_stop
                 reason: "Bambu 3D Printer is offline"
 
-  # Fan safety interlock for active prints
-  # Triggers emergency stop if fan RPM stays below threshold for too long
+  # Fan safety interlock
+  # Immediately disables heating when the controller is active and fan RPM is too low
   - id: check_fan_failure
     mode: restart
     then:
       - lambda: |-
           if (!id(boot_complete) || id(emergency_stop).state) {
-            id(fan_low_rpm_since_ms) = 0;
             return;
           }
 
           const float rpm = id(fan_rpm).state;
-          if (isnan(rpm)) {
+          if (isnan(rpm) || id(controller_status).state != "Active") {
             return;
           }
 
           if (rpm < ${fan_min_rpm}) {
-            if (id(fan_low_rpm_since_ms) == 0) {
-              id(fan_low_rpm_since_ms) = millis();
-              ESP_LOGW("safety", "Fan RPM below threshold: %.0f RPM (min %s RPM)", rpm, "${fan_min_rpm}");
-              return;
-            }
-
-            if ((millis() - id(fan_low_rpm_since_ms)) >= ${fan_fail_timeout_ms}UL) {
-              id(fan_low_rpm_since_ms) = 0;
-              id(trigger_emergency_stop)->execute("Fan failure detected - RPM below threshold for too long");
-              ESP_LOGE("safety", "EMERGENCY: Fan failure detected - RPM below threshold for too long");
-            }
-          } else {
-            id(fan_low_rpm_since_ms) = 0;
+            id(trigger_emergency_stop)->execute("Fan RPM below threshold while heater is active");
+            ESP_LOGE("safety", "EMERGENCY: Fan RPM %.0f below minimum %s while heater is active", rpm, "${fan_min_rpm}");
           }
 
   # Auto-select chamber temperature preset based on Bambu printer's filament type
@@ -753,6 +733,9 @@ text_sensor:
       if (v == 0) return std::string("Stopped");
       if (v == 1) return std::string("Active");
       return std::string("Unknown");
+    on_value:
+      then:
+        - script.execute: check_fan_failure
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -932,7 +915,6 @@ text_sensor:
             if (is_printing) {
               id(auto_select_filament_preset)->execute();
             }
-        - script.execute: check_fan_failure
 
   - platform: homeassistant
     name: "Bambu Active Filament Type"
@@ -1311,11 +1293,6 @@ interval:
             - script.execute:
                 id: trigger_emergency_stop
                 reason: "Temperature telemetry stale for >${comms_timeout_ms}ms"
-
-  # Backstop fan safety check in case sensor events are delayed
-  - interval: ${watchdog_interval}
-    then:
-      - script.execute: check_fan_failure
 
   # Status LED update - refreshes LED state every 5 seconds
   - interval: 5s
