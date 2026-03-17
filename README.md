@@ -22,14 +22,6 @@ This project allows you to intelligently manage your chamber heater by turning i
 - **Communication Watchdog** - Auto-shutoff if Modbus communication is lost for >90 seconds
 - **End of Job** - Auto-shutoff when print is finished
 
-### Status Indication
-- **LED Status Indicator** - WS2812 RGB LED provides instant visual feedback of system state
-  - 🔴 **Solid Red** - Emergency stop active
-  - 🔵 **Pulsing Blue** - WiFi disconnected
-  - 🔴 **Flashing Red** - Over temperature warning (>60°C)
-  - 🟠 **Pulsing Orange** - Heater actively running
-  - 🟢 **Dim Green** - Normal operation (idle/connected)
-
 ### Configuration
 - **Dual Unit Support** - Switch between Celsius and Fahrenheit temperature units
 - **Temperature Calibration** - Adjustable temperature offset for sensor accuracy
@@ -45,13 +37,15 @@ Make sure you have the following before proceeding:
 ### Hardware
 - Bambu P1S / X1 Carbon 3D Printer
 - Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller (no need to get the SA30 since the SA10 can handles nearly 5 times the amperage for a 250W heater)
-- Waveshare ESP32-C6-Zero Wireless Module
+- Waveshare ESP32-C6-Zero Wireless Module with 2 x 9-Pin Headers soldered
 - NOYITO AC 100V-264V to DC 24V 1A Power Supply Module (powers the 24V Fan only)
 - AC 120/240V PTC Heater 200-250W (no need to be more powerful than this)
 - 24V 4020 3-Wire Fan (Used: SUNON MF40202VX-1000U-G99 with 10.8CFM airflow)
 - (2) 3-Way WAGO Connectors
 - 16Ga Silicon Wiring (Used: red and black wiring) 
 - 1/4 Watt 10K Ohm Resistor (for 3.3V pull-up power for tach)
+- JST MX 1.25MM 4-Pin wired cable to connect ESP32 to Temperature Controller
+- Assorted 2.54MM Pitch Housing Connectors with crimp pins to terminate JST MX 4-Pin cable  
 - Heat set inserts: (15) M3x4x5 + (1) M2x2.5x3.2
 - Screws: 
   - (7) M3x5MM or 6MM button screws for covers
@@ -64,7 +58,7 @@ Make sure you have the following before proceeding:
   - (2) M4 self-locking nuts to connect the PTC heater to the front cover
   - (1) M2x3MM machine screw to hold the wireless module to the housing
 - (1) XT30 connector pair set (both ends) to allow the chamber heater to be removed
-- Heatshrink tubing (for XT30 connectors)
+- Heatshrink tubing (for XT30 connectors and ESP32 wiring harness)
 - Soldering equipment (depending on the installation method)
 - USB-to-TTL UART Programmer (Note: I highly recommend FTDI-based programmers)
 
@@ -117,9 +111,11 @@ Here is a basic wiring diagram for AC-powered Sinilink XY-SA Series Temperature 
 
 ![Alt Wiring Diagram](images/bambusauna_wiring_diagram.png)
 
-![Alt screenshot](images/bambusauna-3.jpeg)
+![Alt ESP32 Pinout](images/esp-c6-zero-pinout.png)
 
-![Alt screenshot](images/bambusauna-2.jpeg)
+![Alt screenshot](images/esp32-wiring-harness.jpeg)
+
+![Alt screenshot](images/bambusauna-esp32.jpeg)
 
 Disclaimer: The author assumes no liability for any injury, damage, or loss resulting from wiring errors, improper installation, or misuse of this project. Electrical work can be hazardous—if you are unsure, consult a qualified professional before proceeding.
 
@@ -321,6 +317,14 @@ You can now remotely monitor and manage the temperature controller directly from
 By default, when a print starts, the controller checks the selected filament type. If it matches one of the configured presets, the system automatically sets the appropriate chamber temperature and enables the heater.
 
 When the print completes or fails, the chamber heater is automatically turned off. No need to manually create automation scripts in Home Assistant. 
+
+### Status Indication
+- **LED Status Indicator** - WS2812 RGB LED provides instant visual feedback of system state
+  - 🔴 **Solid Red** - Emergency stop active
+  - 🔵 **Pulsing Blue** - WiFi disconnected
+  - 🔴 **Flashing Red** - Over temperature warning
+  - 🟠 **Pulsing Orange** - Heater actively running
+  - 🟢 **Dim Green** - Normal operation (idle/connected)
 
 ## Known Issues
 - The Sinilink Modbus addresses for **Sleep Switch** (`0x0014`) and **Backlight Grade** (`0x0015`) do not appear to have any effect. This may be due to limitations in the XY-SA10/SA30 controllers I have been using for development, or to a misinterpretation of Modbus address information. I've commented this out for the time being.

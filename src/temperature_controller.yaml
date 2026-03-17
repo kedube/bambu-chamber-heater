@@ -166,7 +166,7 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
-    
+
 script:
   # Ensures controller's temperature unit matches the configured unit in this file
   # Runs on boot to sync controller if it was changed via physical buttons
@@ -221,7 +221,8 @@ script:
       - if:
           condition:
             lambda: |-
-              return id(boot_complete) &&
+              bool boot_ready = id(boot_complete);  // Cache to avoid repeated global access
+              return boot_ready &&
                      !id(bambu_printer_online).state;
           then:
             - script.execute:
@@ -234,7 +235,8 @@ script:
     mode: restart
     then:
       - lambda: |-
-          if (!id(boot_complete) || id(emergency_stop).state) {
+          bool boot_ready = id(boot_complete);  // Cache to avoid repeated global access
+          if (!boot_ready || id(emergency_stop).state) {
             id(fan_low_rpm_since_ms) = 0;
             return;
           }
@@ -437,6 +439,7 @@ light:
               duration: 500ms
             - state: false
               duration: 500ms
+    internal: true
     icon: "mdi:led-on"
     web_server:
       sorting_group_id: sorting_group_system
@@ -593,6 +596,7 @@ sensor:
         - lambda: |-
             uint32_t now = millis();
             bool emergency_active = id(emergency_stop).state;  // Cache state to reduce Modbus reads
+            bool boot_ready = id(boot_complete);  // Cache to avoid repeated global access
             id(last_temp_update_ms) = now;
             id(comms_fault_latched) = false;
 
@@ -611,7 +615,7 @@ sensor:
               if (time_delta_sec > 0.0f) {
                 float temp_rate = temp_delta / time_delta_sec;
 
-                if (id(boot_complete) && id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
+                if (boot_ready && id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
                   if (!emergency_active) {
                     id(emergency_stop).turn_on();
                     ESP_LOGE("safety",
@@ -630,7 +634,8 @@ sensor:
         - if:
             condition:
               lambda: |-
-                return id(boot_complete) &&
+                bool boot_ready = id(boot_complete);  // Cache to avoid repeated global access
+                return boot_ready &&
                        id(over_temp_shutoff).state &&
                        !isnan(id(high_temp_alarm).state) &&
                        x > id(high_temp_alarm).state &&
@@ -657,7 +662,8 @@ sensor:
         - if:
             condition:
               lambda: |-
-                return id(boot_complete) &&
+                bool boot_ready = id(boot_complete);  // Cache to avoid repeated global access
+                return boot_ready &&
                        id(over_temp_shutoff).state &&
                        !isnan(id(low_temp_alarm).state) &&
                        id(controller_status).state == "Active" &&
@@ -701,7 +707,7 @@ sensor:
     id: fan_rpm
     unit_of_measurement: "RPM"
     accuracy_decimals: 0
-    update_interval: 3s
+    update_interval: 5s
     count_mode:
       rising_edge: DISABLE
       falling_edge: INCREMENT
@@ -861,7 +867,7 @@ text_sensor:
     icon: "mdi:wifi-cog"
     lambda: |-
       return get_negotiated_wifi_protocol();
-    update_interval: 30s
+    update_interval: 300s
     web_server:
       sorting_group_id: sorting_group_diagnostic
  
@@ -912,7 +918,7 @@ text_sensor:
       result += "ago";
 
       return result;
-    update_interval: 10s
+    update_interval: 30s
     web_server:
       sorting_group_id: sorting_group_system
 
@@ -1323,8 +1329,8 @@ interval:
                 id: trigger_emergency_stop
                 reason: "Temperature telemetry stale for >${comms_timeout_ms}ms"
 
-  # Status LED update - refreshes LED state every 5 seconds
-  - interval: 5s
+  # Status LED update - refreshes LED state every 10 seconds
+  - interval: 10s
     then:
       - script.execute: update_status_led
 
