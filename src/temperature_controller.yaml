@@ -160,6 +160,13 @@ globals:
     type: uint32_t
     restore_value: no
     initial_value: '0'
+  # Tracks whether emergency stop was triggered by fan RPM falling below the safety threshold
+  # Used to block automatic emergency-stop clearing until the user clears it manually
+  - id: emergency_stop_due_to_fan_failure
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+    
 script:
   # Ensures controller's temperature unit matches the configured unit in this file
   # Runs on boot to sync controller if it was changed via physical buttons
@@ -246,6 +253,7 @@ script:
 
             if ((millis() - id(fan_low_rpm_since_ms)) >= (${fan_fail_timeout_seconds}UL * 1000UL)) {
               id(fan_low_rpm_since_ms) = 0;
+              id(emergency_stop_due_to_fan_failure) = true;
               id(trigger_emergency_stop)->execute("Fan RPM below threshold while heater is active");
               ESP_LOGE("safety", "EMERGENCY: Fan RPM %.0f below minimum %s for at least %s seconds while heater is active", rpm, "${fan_min_rpm}", "${fan_fail_timeout_seconds}");
             }
@@ -1095,9 +1103,11 @@ select:
               call_stop.set_value(temp_stop);
               call_stop.perform();
               
-              if (id(emergency_stop).state == 1) {
+              if (id(emergency_stop).state == 1 && !id(emergency_stop_due_to_fan_failure)) {
                 id(emergency_stop).turn_off();
                 ESP_LOGI("preset", "Emergency stop deactivated");
+              } else if (id(emergency_stop).state == 1) {
+                ESP_LOGW("preset", "Emergency stop remains active because it was triggered by fan safety");
               }
               
               ESP_LOGI("preset", "%s mode set (%.1f${temp_unit_label} - %.1f${temp_unit_label})",
@@ -1182,6 +1192,7 @@ switch:
           // Clear timestamp when emergency is manually cleared
           // Allows new emergency events to be tracked
           id(emergency_stop_timestamp) = 0;
+          id(emergency_stop_due_to_fan_failure) = false;
       - logger.log:
           format: "Emergency stopped disabled"
           level: INFO
