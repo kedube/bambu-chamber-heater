@@ -1,6 +1,6 @@
 #
 # Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers using the 
-# ESP8285 (XY-WFPOW) microcontroller. Designed to work with Bambu 3D Printers as a chamber heater controller.
+# ESP32-based microcontroller. Designed to work with Bambu 3D Printers as a chamber heater controller.
 # Copyright (C) 2026    Katherine Dubé
 #
 # This program is free software: you can redistribute it and/or modify
