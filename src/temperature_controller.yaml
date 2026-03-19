@@ -200,8 +200,6 @@ script:
   # Consolidates emergency stop logic to ensure consistent logging
   - id: trigger_emergency_stop
     mode: restart
-    parameters:
-      reason: string
     then:
       - if:
           condition:
@@ -210,7 +208,7 @@ script:
           then:
             - lambda: |-
                 id(emergency_stop_fault) = true;
-                ESP_LOGE("safety", "EMERGENCY: %s", reason.c_str());
+                ESP_LOGE("safety", "EMERGENCY: Triggering emergency stop");
             - switch.turn_on: emergency_stop_internal
 
   # Safety check for Bambu printer connectivity
@@ -225,9 +223,9 @@ script:
               return boot_ready &&
                      !id(bambu_printer_online).state;
           then:
-            - script.execute:
-                id: trigger_emergency_stop
-                reason: "Bambu 3D Printer is offline"
+            - lambda: |-
+                ESP_LOGE("safety", "EMERGENCY: Bambu printer is offline");
+                id(trigger_emergency_stop)->execute();        
 
   # Auto-select chamber temperature preset based on Bambu printer's filament type
   # Reads current filament type and sets appropriate chamber heating preset
@@ -307,10 +305,8 @@ api:
           then:
             - lambda: |-
                 id(api_connection) = false;
-            - script.execute:
-                id: trigger_emergency_stop
-                reason: "Home Assistant API connection lost"
-
+                ESP_LOGE("safety", "EMERGENCY: Home Assistant API connection lost");
+                id(trigger_emergency_stop)->execute();
 logger:
   level: DEBUG
   # Log Levels: NONE, ERROR, WARN, INFO, DEBUG, VERBOSE, VERY_VERBOSE
@@ -492,15 +488,11 @@ sensor:
                 if (boot_ready && id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
                   if (!emergency_active) {
                     char reason[160];
-                    snprintf(
-                      reason,
-                      sizeof(reason),
-                      "Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
-                      temp_rate,
-                      "${temp_unit_label}",
-                      "${temp_unit_label}"
-                    );
-                    id(trigger_emergency_stop)->execute(std::string(reason));
+                    id(emergency_stop).turn_on();
+                    ESP_LOGE("safety",
+                      "EMERGENCY: Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
+                      temp_rate, "${temp_unit_label}", "${temp_unit_label}");
+                    id(trigger_emergency_stop)->execute();
                   }
                 }
               }
@@ -522,17 +514,14 @@ sensor:
                        !id(emergency_stop).state;
             then:
               - lambda: |-
-                  char reason[160];
-                  snprintf(
-                    reason,
-                    sizeof(reason),
-                    "Temperature %.1f%s exceeds High Temperature Alarm: %.1f%s",
+                  ESP_LOGE("safety",
+                    "EMERGENCY: Temperature %.1f%s exceeds High Temperature Alarm: %.1f%s",
                     id(current_temperature).state,
                     "${temp_unit_label}",
                     id(high_temp_alarm).state,
                     "${temp_unit_label}"
                   );
-                  id(trigger_emergency_stop)->execute(std::string(reason));
+                  id(trigger_emergency_stop)->execute();
         # Low temperature alarm - detects sensor failure or runaway cooling
         # Only triggers when controller is ACTIVE (heating or cooling)
         # When STOPPED, temp naturally falls and is not an emergency
@@ -552,17 +541,14 @@ sensor:
                        !id(emergency_stop).state;
             then:
               - lambda: |-
-                  char reason[180];
-                  snprintf(
-                    reason,
-                    sizeof(reason),
-                    "Temperature %.1f%s below Low Temperature Alarm: %.1f%s (possible sensor failure)",
+                  ESP_LOGE("safety",
+                    "EMERGENCY: Temperature %.1f%s below Low Temperature Alarm: %.1f%s (possible sensor failure)",
                     id(current_temperature).state,
                     "${temp_unit_label}",
                     id(low_temp_alarm).state,
                     "${temp_unit_label}"
                   );
-                  id(trigger_emergency_stop)->execute(std::string(reason));
+                  id(trigger_emergency_stop)->execute();
     id: current_temperature
     icon: "mdi:thermometer"
     web_server:
@@ -647,9 +633,9 @@ text_sensor:
             then:
               # Sensor disconnection is critical - cannot safely operate without temperature data
               # Force emergency stop immediately
-              - script.execute:
-                  id: trigger_emergency_stop
-                  reason: "Temperature sensor disconnected"
+              lambda: |-
+                ESP_LOGE("safety", "EMERGENCY: Temperature sensor disconnected");
+                id(trigger_emergency_stop)->execute();
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -1194,9 +1180,8 @@ interval:
           then:
             - lambda: |-
                 id(comms_fault_latched) = true;
-            - script.execute:
-                id: trigger_emergency_stop
-                reason: "Temperature telemetry stale for >${comms_timeout_ms}ms"
+                ESP_LOGE("safety", "EMERGENCY: No temperature updates received for >${comms_timeout_ms}ms");
+                id(trigger_emergency_stop)->execute();
     
 web_server:
   port: 80
