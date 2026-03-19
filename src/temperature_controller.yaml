@@ -23,7 +23,7 @@ substitutions:
   device_description: "ESP32-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
   device_area: "Office"
   bambu_printer_entity_id: !secret bambu_printer_id
-  sw_version: "1.6.0"
+  sw_version: "1.6.1"
   pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
@@ -160,9 +160,16 @@ globals:
     type: uint32_t
     restore_value: no
     initial_value: '0'
-  # Tracks whether emergency stop was triggered by fan RPM falling below the safety threshold
+  # Tracks whether emergency stop was triggered by fault or exceeding a safety threshold
   # Used to block automatic emergency-stop clearing until the user clears it manually
-  - id: emergency_stop_due_to_fan_failure
+  - id: emergency_stop_fault
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  # Tracks whether the user has requested a manual emergency-stop clear.
+  # The fault latch is only cleared after the underlying Modbus switch
+  # actually turns off successfully.
+  - id: emergency_stop_manual_clear_pending
     type: bool
     restore_value: no
     initial_value: 'false'
@@ -210,8 +217,9 @@ script:
               return !id(emergency_stop).state;
           then:
             - lambda: |-
+                id(emergency_stop_fault) = true;
                 ESP_LOGE("safety", "EMERGENCY: %s", reason.c_str());
-            - switch.turn_on: emergency_stop
+            - switch.turn_on: emergency_stop_internal
 
   # Safety check for Bambu printer connectivity
   # Forces emergency stop whenever printer online sensor is OFF
@@ -255,9 +263,16 @@ script:
 
             if ((millis() - id(fan_low_rpm_since_ms)) >= (${fan_fail_timeout_seconds}UL * 1000UL)) {
               id(fan_low_rpm_since_ms) = 0;
-              id(emergency_stop_due_to_fan_failure) = true;
-              id(trigger_emergency_stop)->execute("Fan RPM below threshold while heater is active");
-              ESP_LOGE("safety", "EMERGENCY: Fan RPM %.0f below minimum %s for at least %s seconds while heater is active", rpm, "${fan_min_rpm}", "${fan_fail_timeout_seconds}");
+              char reason[160];
+              snprintf(
+                reason,
+                sizeof(reason),
+                "Fan RPM %.0f below minimum %s for at least %s seconds while heater is active",
+                rpm,
+                "${fan_min_rpm}",
+                "${fan_fail_timeout_seconds}"
+              );
+              id(trigger_emergency_stop)->execute(std::string(reason));
             }
           } else {
             id(fan_low_rpm_since_ms) = 0;
@@ -617,10 +632,16 @@ sensor:
 
                 if (boot_ready && id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
                   if (!emergency_active) {
-                    id(emergency_stop).turn_on();
-                    ESP_LOGE("safety",
-                      "EMERGENCY: Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
-                      temp_rate, "${temp_unit_label}", "${temp_unit_label}");
+                    char reason[160];
+                    snprintf(
+                      reason,
+                      sizeof(reason),
+                      "Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
+                      temp_rate,
+                      "${temp_unit_label}",
+                      "${temp_unit_label}"
+                    );
+                    id(trigger_emergency_stop)->execute(std::string(reason));
                   }
                 }
               }
@@ -641,17 +662,18 @@ sensor:
                        x > id(high_temp_alarm).state &&
                        !id(emergency_stop).state;
             then:
-              - script.execute:
-                  id: trigger_emergency_stop
-                  reason: "High temperature alarm exceeded"
               - lambda: |-
-                  ESP_LOGE("safety",
-                    "EMERGENCY: Temperature %.1f%s exceeds High Temperature Alarm: %.1f%s",
+                  char reason[160];
+                  snprintf(
+                    reason,
+                    sizeof(reason),
+                    "Temperature %.1f%s exceeds High Temperature Alarm: %.1f%s",
                     id(current_temperature).state,
                     "${temp_unit_label}",
                     id(high_temp_alarm).state,
                     "${temp_unit_label}"
                   );
+                  id(trigger_emergency_stop)->execute(std::string(reason));
         # Low temperature alarm - detects sensor failure or runaway cooling
         # Only triggers when controller is ACTIVE (heating or cooling)
         # When STOPPED, temp naturally falls and is not an emergency
@@ -670,17 +692,18 @@ sensor:
                        x < id(low_temp_alarm).state &&
                        !id(emergency_stop).state;
             then:
-              - script.execute:
-                  id: trigger_emergency_stop
-                  reason: "Low temperature alarm exceeded"
               - lambda: |-
-                  ESP_LOGE("safety",
-                    "EMERGENCY: Temperature %.1f%s below Low Temperature Alarm: %.1f%s (possible sensor failure)",
+                  char reason[180];
+                  snprintf(
+                    reason,
+                    sizeof(reason),
+                    "Temperature %.1f%s below Low Temperature Alarm: %.1f%s (possible sensor failure)",
                     id(current_temperature).state,
                     "${temp_unit_label}",
                     id(low_temp_alarm).state,
                     "${temp_unit_label}"
                   );
+                  id(trigger_emergency_stop)->execute(std::string(reason));
     id: current_temperature
     icon: "mdi:thermometer"
     web_server:
@@ -1109,11 +1132,11 @@ select:
               call_stop.set_value(temp_stop);
               call_stop.perform();
               
-              if (id(emergency_stop).state == 1 && !id(emergency_stop_due_to_fan_failure)) {
-                id(emergency_stop).turn_off();
+              if (id(emergency_stop).state == 1 && !id(emergency_stop_fault)) {
+                id(emergency_stop_internal).turn_off();
                 ESP_LOGI("preset", "Emergency stop deactivated");
               } else if (id(emergency_stop).state == 1) {
-                ESP_LOGW("preset", "Emergency stop remains active because it was triggered by fan safety");
+                ESP_LOGW("preset", "Emergency stop remains active because it was triggered by a fault condition");
               }
               
               ESP_LOGI("preset", "%s mode set (%.1f${temp_unit_label} - %.1f${temp_unit_label})",
@@ -1176,14 +1199,16 @@ switch:
 
   - platform: modbus_controller
     modbus_controller_id: modbus_device
-    name: "Emergency Stop"
+    name: "Emergency Stop Internal"
     address: 0x0011
     register_type: holding
     use_write_multiple: false
-    id: emergency_stop
+    id: emergency_stop_internal
+    internal: true
     icon: "mdi:car-brake-alert"
     on_turn_on:
       - lambda: |-
+          id(emergency_stop_manual_clear_pending) = false;
           // Set timestamp only if not already set
           // Preserves time of first emergency if multiple conditions trigger
           if (id(emergency_stop_timestamp) == 0) {
@@ -1195,14 +1220,33 @@ switch:
       - script.execute: update_status_led
     on_turn_off:
       - lambda: |-
-          // Clear timestamp when emergency is manually cleared
-          // Allows new emergency events to be tracked
+          // Clear timestamp whenever emergency stop is released.
           id(emergency_stop_timestamp) = 0;
-          id(emergency_stop_due_to_fan_failure) = false;
+          // Only clear the fault latch after the controller actually leaves
+          // emergency stop and only if the user requested a manual clear.
+          if (id(emergency_stop_manual_clear_pending)) {
+            id(emergency_stop_fault) = false;
+            id(emergency_stop_manual_clear_pending) = false;
+          }
       - logger.log:
           format: "Emergency stopped disabled"
           level: INFO
       - script.execute: update_status_led
+    web_server:
+      sorting_group_id: sorting_group_system
+
+  - platform: template
+    name: "Emergency Stop"
+    lambda: |-
+      return id(emergency_stop_internal).state;
+    turn_on_action:
+      - switch.turn_on: emergency_stop_internal
+    turn_off_action:
+      - lambda: |-
+          id(emergency_stop_manual_clear_pending) = true;
+      - switch.turn_off: emergency_stop_internal
+    id: emergency_stop
+    icon: "mdi:car-brake-alert"
     web_server:
       sorting_group_id: sorting_group_system
 
