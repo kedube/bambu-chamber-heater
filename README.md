@@ -266,28 +266,57 @@ INFO UART logging is disabled (baud_rate=0). Not starting UART logs.
 A USB-C connection is required **only for the initial flash**. After that, all future updates can be deployed using **ESPHome Over-The-Air (OTA)** once the configuration compiles successfully.
 
 ```
-Linking .pioenvs/bambu-chamber-heater/firmware.elf
-RAM:   [====      ]  44.4% (used 36380 bytes from 81920 bytes)
-Flash: [=====     ]  54.9% (used 562413 bytes from 1023984 bytes)
-Building .pioenvs/bambu-chamber-heater/firmware.bin
-esp8266_copy_factory_bin([".pioenvs/bambu-chamber-heater/firmware.bin"], [".pioenvs/bambu-chamber-heater/firmware.elf"])
-esp8266_copy_ota_bin([".pioenvs/bambu-chamber-heater/firmware.bin"], [".pioenvs/bambu-chamber-heater/firmware.elf"])
-========================================================================== [SUCCESS] Took 3.38 seconds ==========================================================================
+Linking .pioenvs/chamber-heater/firmware.elf
+                            Memory Type Usage Summary                             
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Memory Type/Section ┃ Used [bytes] ┃ Used [%] ┃ Remain [bytes] ┃ Total [bytes] ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ Flash Code          │       991712 │          │                │               │
+│    .text            │       843088 │          │                │               │
+│    .rodata          │       148368 │          │                │               │
+│    .appdesc         │          256 │          │                │               │
+│ DIRAM               │       130448 │    28.85 │         321664 │        452112 │
+│    .text            │        92744 │    20.51 │                │               │
+│    .bss             │        24304 │     5.38 │                │               │
+│    .data            │        13400 │     2.96 │                │               │
+└─────────────────────┴──────────────┴──────────┴────────────────┴───────────────┘
+Total image size: 1097864 bytes (.bin may be padded larger)
+Note: The reported total sizes may be smaller than those in the technical reference manual due to reserved memory and application configuration. The total flash size available for the application is not included by default, as it cannot be reliably determined due to the presence of other data like the bootloader, partition table, and application partition size.
+RAM:   [=         ]  11.5% (used 37704 bytes from 327680 bytes)
+Flash: [===       ]  27.9% (used 1097600 bytes from 3932160 bytes)
+Building .pioenvs/chamber-heater/firmware.bin
+Creating ESP32C6 image...
+Successfully created ESP32C6 image.
+merge_factory_bin([".pioenvs/chamber-heater/firmware.bin"], [".pioenvs/chamber-heater/firmware.elf"])
+Info: bootloader.bin not found - skipping
+Info: partition-table.bin not found - skipping
+Info: ota_data_initial.bin not found - skipping
+Info: chamber-heater.bin not found - skipping
+Using FLASH_EXTRA_IMAGES from PlatformIO environment
+Merging binaries into /Users/katherine/Downloads/bambu-chamber-heater.esp32/src/.esphome/build/chamber-heater/.pioenvs/chamber-heater/firmware.factory.bin
+Merging binaries with esptool
+SHA digest in image updated.
+Wrote 0x11c0f0 bytes to file '/Users/katherine/Downloads/bambu-chamber-heater.esp32/src/.esphome/build/chamber-heater/.pioenvs/chamber-heater/firmware.factory.bin', ready to flash to offset 0x0.
+Successfully created /Users/katherine/Downloads/bambu-chamber-heater.esp32/src/.esphome/build/chamber-heater/.pioenvs/chamber-heater/firmware.factory.bin
+esp32_copy_ota_bin([".pioenvs/chamber-heater/firmware.bin"], [".pioenvs/chamber-heater/firmware.elf"])
+Copied firmware to /Users/katherine/Downloads/bambu-chamber-heater.esp32/src/.esphome/build/chamber-heater/.pioenvs/chamber-heater/firmware.ota.bin
+==================================================================== [SUCCESS] Took 14.98 seconds ====================================================================
+INFO Build Info: config_hash=0xe8b8e332 build_time_str=2026-03-18 20:29:16 -0400
 INFO Successfully compiled program.
-INFO Connecting to 192.168.1.27 port 8266...
+INFO Connecting to 192.168.1.27 port 3232...
 INFO Connected to 192.168.1.27
-INFO Uploading /Users/username/Downloads/sinilink_temperature_controller/.esphome/build/bambu-chamber-heater/.pioenvs/bambu-chamber-heater/firmware.bin (566560 bytes)
-INFO Compressed to 396547 bytes
+INFO Uploading /Users/katherine/Downloads/bambu-chamber-heater.esp32/src/.esphome/build/chamber-heater/.pioenvs/chamber-heater/firmware.bin (1097968 bytes)
 Uploading: [============================================================] 100% Done...
 
-INFO Upload took 5.84 seconds, waiting for result...
+INFO Upload took 3.03 seconds, waiting for result...
 INFO OTA successful
 INFO Successfully uploaded program.
 INFO Starting log output from 192.168.1.27 using esphome API
-INFO Successfully resolved bambu-chamber-heater @ 192.168.1.27 in 0.000s
-INFO Trying to connect to bambu-chamber-heater @ 192.168.1.27 in the background
-INFO Successfully connected to bambu-chamber-heater @ 192.168.1.27 in 0.034s
-INFO Successful handshake with bambu-chamber-heater @ 192.168.1.27 in 2.847s
+INFO Successfully resolved chamber-heater @ 192.168.1.27 in 0.000s
+INFO Successfully connected to chamber-heater @ 192.168.1.27 in 3.039s
+INFO Successful handshake with chamber-heater @ 192.168.1.27 in 0.051s
+[20:29:40.991][I][app:215]: ESPHome version 2026.2.4 compiled on 2026-03-18 12:56:27 -0400
+[20:29:40.996][I][app:222]: ESP32 Chip: ESP32-C6 rev0.2, 1 core(s)
 ```
 
 ### 6. Connect to the web server running on the ESP32 module
