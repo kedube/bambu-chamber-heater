@@ -212,7 +212,8 @@ script:
             - switch.turn_on: emergency_stop_internal
 
   # Safety check for Bambu printer connectivity
-  # Forces emergency stop whenever printer online sensor is OFF
+  # Only evaluates once boot is complete, the HA API is connected,
+  # and Home Assistant has published a printer online/offline state.
   - id: check_bambu_printer_online
     mode: restart
     then:
@@ -220,12 +221,16 @@ script:
           condition:
             lambda: |-
               bool boot_ready = id(boot_complete);  // Cache to avoid repeated global access
+              bool api_ready = id(api_connection);
+              bool printer_state_ready = id(bambu_printer_online).has_state();
               return boot_ready &&
+                     api_ready &&
+                     printer_state_ready &&
                      !id(bambu_printer_online).state;
           then:
             - lambda: |-
                 ESP_LOGE("safety", "EMERGENCY: Bambu printer is offline");
-                id(trigger_emergency_stop)->execute();        
+                id(trigger_emergency_stop)->execute();
 
   # Auto-select chamber temperature preset based on Bambu printer's filament type
   # Reads current filament type and sets appropriate chamber heating preset
@@ -278,7 +283,6 @@ esphome:
       - lambda: |-
           id(boot_complete) = true;
           ESP_LOGI("boot", "Boot complete - emergency stop checks now active");
-      - script.execute: check_bambu_printer_online
   platformio_options:
     build_flags: 
       - -Os # Optimize for size to fit within 1MB flash of ESP8285
@@ -297,6 +301,7 @@ api:
     then:
       - lambda: |-
           id(api_connection) = true;
+      - script.execute: check_bambu_printer_online
   on_client_disconnected:
     then:
       - if:
