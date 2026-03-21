@@ -296,7 +296,7 @@ script:
             call.set_option(type_it->second);
             call.perform();
 
-            ESP_LOGI("bambu", "Auto-set chamber temp preset to %s (from filament type: %s)",
+            ESP_LOGI("bambu", "Auto-set chamber temperature preset to %s (%s filament)",
                      type_it->second.c_str(), filament_raw.c_str());
           } else {
             ESP_LOGW("bambu", "Unknown filament type: %s - keeping current preset",
@@ -771,8 +771,14 @@ text_sensor:
     icon: "mdi:thermostat"
     lambda: |-
       uint16_t v = modbus_controller::word_from_hex_str(x, 0);
-      if (v == 0) return std::string("Stopped");
-      if (v == 1) return std::string("Active");
+      if (v == 0) {
+        ESP_LOGI("heater", "Chamber heater stopped");
+        return std::string("Stopped");
+      }
+      if (v == 1) {
+        ESP_LOGI("heater", "Chamber heater active");
+        return std::string("Active");
+      }
       return std::string("Unknown");
     on_value:
       then:
@@ -791,21 +797,19 @@ text_sensor:
     id: sensor_status
     icon: "mdi:information-outline"
     lambda: |-
-      uint16_t v = modbus_controller::word_from_hex_str(x, 0);
-      if (v == 0) return std::string("Connected");
-      if (v == 1) return std::string("Disconnected");
-      return std::string("Unknown");
+      switch (modbus_controller::word_from_hex_str(x, 0)) {
+        case 0: return std::string("Connected");
+        case 1: return std::string("Disconnected");
+        default: return std::string("Unknown");
+      }
     on_value:
       then:
-        - if:
-            condition:
-              lambda: "return x == \"Disconnected\" && !id(emergency_stop).state;"
-            then:
-              # Sensor disconnection is critical - cannot safely operate without temperature data
-              # Force emergency stop immediately
-              lambda: |-
-                ESP_LOGE("safety", "EMERGENCY: Temperature sensor disconnected");
-                id(trigger_emergency_stop)->execute();
+        # Sensor disconnection is critical - cannot safely operate without temperature data
+        # Force emergency stop immediately
+        - lambda: |-
+            if (x != "Disconnected" || id(emergency_stop).state) return;
+            ESP_LOGE("safety", "EMERGENCY: Temperature sensor disconnected");
+            id(trigger_emergency_stop)->execute();
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -821,8 +825,14 @@ text_sensor:
     icon: "mdi:temperature-auto"
     lambda: |-
       uint16_t v = modbus_controller::word_from_hex_str(x, 0);
-      if (v == 0) return std::string("Celsius");
-      if (v == 1) return std::string("Fahrenheit");
+      if (v == 0) {
+        ESP_LOGI("heater", "Chamber heater operating in Celsius");
+        return std::string("Celsius");
+      }
+      if (v == 1) {
+        ESP_LOGI("heater", "Chamber heater operating in Fahrenheit");
+        return std::string("Fahrenheit");
+      }
       return std::string("Unknown");
     web_server:
       sorting_group_id: sorting_group_sensors
@@ -839,8 +849,14 @@ text_sensor:
     icon: "mdi:thermostat-cog"
     lambda: |-
       uint16_t v = modbus_controller::word_from_hex_str(x, 0);
-      if (v == 0) return std::string("Heating");
-      if (v == 1) return std::string("Cooling");
+      if (v == 0) {
+        ESP_LOGI("heater", "Chamber heater operating in Heating mode");
+        return std::string("Heating");
+      }
+      if (v == 1) {
+        ESP_LOGI("heater", "Chamber heater operating in Cooling mode");
+        return std::string("Cooling");
+      }
       return std::string("Unknown");
     web_server:
       sorting_group_id: sorting_group_sensors
@@ -1125,7 +1141,7 @@ select:
                 ESP_LOGW("preset", "Emergency stop remains active because it was triggered by a fault condition");
               }
               
-              ESP_LOGI("preset", "%s mode set (%.1f${temp_unit_label} - %.1f${temp_unit_label})",
+              ESP_LOGI("preset", "%s filament selected setting heating temperature range (%.1f${temp_unit_label} - %.1f${temp_unit_label})",
                        x.c_str(), temp_start, temp_stop);
             }
     entity_category: config
@@ -1141,6 +1157,14 @@ switch:
     address: 0x000D
     register_type: holding
     use_write_multiple: false
+    on_turn_on:
+      then:
+        - lambda: |-
+            ESP_LOGI("switch", "Alarm sound enabled");
+    on_turn_off:
+      then:
+        - lambda: |-
+            ESP_LOGI("switch", "Alarm sound disabled");
     entity_category: config
     id: alarm_sound
     icon: "mdi:alarm-check"
@@ -1200,9 +1224,7 @@ switch:
           if (id(emergency_stop_timestamp) == 0) {
             id(emergency_stop_timestamp) = millis();
           }
-      - logger.log:
-          format: "Emergency stopped enabled"
-          level: INFO
+          ESP_LOGI("switch", "Emergency stop enabled");
       - script.execute: update_status_led
     on_turn_off:
       - lambda: |-
@@ -1214,9 +1236,7 @@ switch:
             id(emergency_stop_fault) = false;
             id(emergency_stop_manual_clear_pending) = false;
           }
-      - logger.log:
-          format: "Emergency stopped disabled"
-          level: INFO
+          ESP_LOGI("switch", "Emergency stop disabled");
       - script.execute: update_status_led
     web_server:
       sorting_group_id: sorting_group_system
@@ -1244,7 +1264,7 @@ switch:
     use_write_multiple: false
     entity_category: config
     id: sleep_switch
-    internal: ${hide_sleep_switch}
+    internal: ${hide_sleep_switch} # Hide if not supported by device
     icon: "mdi:power-sleep"
     web_server:
       sorting_group_id: sorting_group_settings
