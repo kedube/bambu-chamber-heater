@@ -23,7 +23,7 @@ substitutions:
   device_description: "ESP8285-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
   device_area: "Office"
   bambu_printer_entity_id: !secret bambu_printer_id
-  sw_version: "1.6.2"
+  sw_version: "1.6.3"
   pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
@@ -165,6 +165,20 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Track last logged Modbus text sensor states to avoid repeated identical logs on every poll
+  - id: last_controller_status_logged
+    type: std::string
+    restore_value: no
+    initial_value: '"__init__"'
+  - id: last_temperature_unit_logged
+    type: std::string
+    restore_value: no
+    initial_value: '"__init__"'
+  - id: last_controller_mode_logged
+    type: std::string
+    restore_value: no
+    initial_value: '"__init__"'
+
 
 script:
   # Ensures controller's temperature unit matches the configured unit in this file
@@ -208,7 +222,7 @@ script:
           then:
             - lambda: |-
                 id(emergency_stop_fault) = true;
-                ESP_LOGE("safety", "EMERGENCY: Triggering emergency stop");
+                ESP_LOGE("safety", "EMERGENCY: Triggering Emergency Stop");
             - switch.turn_on: emergency_stop_internal
 
   # Safety check for Bambu printer connectivity
@@ -260,6 +274,18 @@ script:
           } else {
             ESP_LOGW("bambu", "Unknown filament type: %s - keeping current preset",
                      filament_raw.c_str());
+          }
+
+  # Reuse one definition of "printer is actively printing/preparing"
+  - id: maybe_auto_select_filament_preset
+    mode: restart
+    then:
+      - lambda: |-
+          const auto& status = id(bambu_printer_status).state;
+          const bool is_printing =
+              (status == "running" || status == "prepare" || status == "slicing");
+          if (is_printing) {
+            id(auto_select_filament_preset)->execute();
           }
 
 esp8266:
@@ -492,8 +518,6 @@ sensor:
 
                 if (boot_ready && id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
                   if (!emergency_active) {
-                    char reason[160];
-                    id(emergency_stop).turn_on();
                     ESP_LOGE("safety",
                       "EMERGENCY: Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
                       temp_rate, "${temp_unit_label}", "${temp_unit_label}");
@@ -560,7 +584,7 @@ sensor:
       sorting_group_id: sorting_group_sensors
 
   - platform: wifi_signal
-    name: "WiFi Signal Strength"
+    name: "WIFI Signal Strength"
     device_class: signal_strength
     state_class: measurement
     unit_of_measurement: "dBm"
@@ -609,15 +633,22 @@ text_sensor:
     icon: "mdi:thermostat"
     lambda: |-
       uint16_t v = modbus_controller::word_from_hex_str(x, 0);
-      if (v == 0) {
-        ESP_LOGI("heater", "Chamber heater stopped");
-        return std::string("Stopped");
-      }
-      if (v == 1) {
-        ESP_LOGI("heater", "Chamber heater active");
-        return std::string("Active");
-      }
+      if (v == 0) return std::string("Stopped");
+      if (v == 1) return std::string("Active");
       return std::string("Unknown");
+    on_value:
+      then:
+        - lambda: |-
+            if (x != id(last_controller_status_logged)) {
+              id(last_controller_status_logged) = x;
+              if (x == "Stopped") {
+                ESP_LOGI("heater", "Chamber heater stopped");
+              } else if (x == "Active") {
+                ESP_LOGI("heater", "Chamber heater active");
+              } else {
+                ESP_LOGW("heater", "Chamber heater status unknown");
+              }
+            }
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -660,15 +691,22 @@ text_sensor:
     icon: "mdi:temperature-auto"
     lambda: |-
       uint16_t v = modbus_controller::word_from_hex_str(x, 0);
-      if (v == 0) {
-        ESP_LOGI("heater", "Chamber heater operating in Celsius");
-        return std::string("Celsius");
-      }
-      if (v == 1) {
-        ESP_LOGI("heater", "Chamber heater operating in Fahrenheit");
-        return std::string("Fahrenheit");
-      }
+      if (v == 0) return std::string("Celsius");
+      if (v == 1) return std::string("Fahrenheit");
       return std::string("Unknown");
+    on_value:
+      then:
+        - lambda: |-
+            if (x != id(last_temperature_unit_logged)) {
+              id(last_temperature_unit_logged) = x;
+              if (x == "Celsius") {
+                ESP_LOGI("heater", "Chamber heater operating in Celsius");
+              } else if (x == "Fahrenheit") {
+                ESP_LOGI("heater", "Chamber heater operating in Fahrenheit");
+              } else {
+                ESP_LOGW("heater", "Chamber heater temperature unit unknown");
+              }
+            }
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -684,15 +722,22 @@ text_sensor:
     icon: "mdi:thermostat-cog"
     lambda: |-
       uint16_t v = modbus_controller::word_from_hex_str(x, 0);
-      if (v == 0) {
-        ESP_LOGI("heater", "Chamber heater operating in Heating mode");
-        return std::string("Heating");
-      }
-      if (v == 1) {
-        ESP_LOGI("heater", "Chamber heater operating in Cooling mode");
-        return std::string("Cooling");
-      }
+      if (v == 0) return std::string("Heating");
+      if (v == 1) return std::string("Cooling");
       return std::string("Unknown");
+    on_value:
+      then:
+        - lambda: |-
+            if (x != id(last_controller_mode_logged)) {
+              id(last_controller_mode_logged) = x;
+              if (x == "Heating") {
+                ESP_LOGI("heater", "Chamber heater operating in Heating mode");
+              } else if (x == "Cooling") {
+                ESP_LOGI("heater", "Chamber heater operating in Cooling mode");
+              } else {
+                ESP_LOGW("heater", "Chamber heater controller mode unknown");
+              }
+            }
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -790,13 +835,15 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
+            const bool is_printing =
+                (x == "running" || x == "prepare" || x == "slicing");
             if (x == "finish" || x == "failed" || x == "offline") {
               // Print ended - turn off chamber heater
               auto call = id(filament_temp_preset).make_call();
               call.set_option("Off");
               call.perform();
               ESP_LOGI("bambu", "Print ended, automatically turning off chamber heater");
-            } else if (x == "running" || x == "prepare" || x == "slicing") {
+            } else if (is_printing) {
               // Print started - auto-select chamber temp based on current filament
               ESP_LOGI("bambu", "Print started, auto-selecting chamber temperature");
             }
@@ -806,6 +853,7 @@ text_sensor:
             if (is_printing) {
               id(auto_select_filament_preset)->execute();
             }
+        - script.execute: maybe_auto_select_filament_preset
 
   - platform: homeassistant
     name: "Bambu Active Filament Type"
@@ -817,13 +865,7 @@ text_sensor:
       then:
         - lambda: |-
             ESP_LOGI("bambu", "Active filament type changed to: %s", x.c_str());
-        - lambda: |-
-            // Only auto-select if printer is actively printing or preparing
-            const auto& status = id(bambu_printer_status).state;
-            bool is_printing = (status == "running" || status == "prepare" || status == "slicing");
-            if (is_printing) {
-              id(auto_select_filament_preset)->execute();
-            }
+        - script.execute: maybe_auto_select_filament_preset
     web_server:
       sorting_group_id: sorting_group_diagnostic
 
