@@ -254,7 +254,7 @@ script:
           then:
             - lambda: |-
                 ESP_LOGE("safety", "EMERGENCY: Bambu printer is offline");
-                id(trigger_emergency_stop)->execute();            
+                id(trigger_emergency_stop)->execute();
 
   # Fan safety interlock
   # Triggers emergency stop only after low RPM persists while heating is active
