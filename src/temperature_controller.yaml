@@ -1101,7 +1101,6 @@ switch:
             id(emergency_stop_timestamp) = millis();
           }
           ESP_LOGI("switch", "Emergency stop enabled");
-      - script.execute: update_status_led
     on_turn_off:
       - lambda: |-
           // Clear timestamp whenever emergency stop is released.
