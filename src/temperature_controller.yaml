@@ -23,7 +23,7 @@ substitutions:
   device_description: "ESP32-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
   device_area: "Office"
   bambu_printer_entity_id: !secret bambu_printer_id
-  sw_version: "1.6.2.esp32"
+  sw_version: "1.6.3.esp32"
   pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
@@ -60,6 +60,9 @@ substitutions:
   fan_fail_timeout_seconds: "10"
   watchdog_interval: "30s"
   emergency_check_delay: "15s" # Delay after boot before enabling emergency stop checks to allow sensor sync
+  # Status LED over-temperature warning threshold
+  # Set per temperature unit to avoid incorrect warnings when using Fahrenheit
+  overtemp_led_warning_threshold: "60.0"
   # Set to "true" to hide sleep switch if not supported by controller, "false" to show it
   hide_sleep_switch: "true"
   # Set to "true" to hide backlight select switch if not supported by controller, "false" to show it
@@ -150,7 +153,7 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
-  # Home Assistant API connection status - used to trigger emergency stop if disconnected for too long
+  # Home Assistant API connection status - used to trigger emergency stop if disconnected
   - id: api_connection
     type: bool
     restore_value: no
@@ -173,6 +176,19 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Track last logged Modbus text sensor states to avoid repeated identical logs on every poll
+  - id: last_controller_status_logged
+    type: std::string
+    restore_value: no
+    initial_value: '"__init__"'
+  - id: last_temperature_unit_logged
+    type: std::string
+    restore_value: no
+    initial_value: '"__init__"'
+  - id: last_controller_mode_logged
+    type: std::string
+    restore_value: no
+    initial_value: '"__init__"'
 
 script:
   # Ensures controller's temperature unit matches the configured unit in this file
@@ -303,6 +319,18 @@ script:
                      filament_raw.c_str());
           }
 
+  # Reuse one definition of "printer is actively printing/preparing"
+  - id: maybe_auto_select_filament_preset
+    mode: restart
+    then:
+      - lambda: |-
+          const auto& status = id(bambu_printer_status).state;
+          const bool is_printing =
+              (status == "running" || status == "prepare" || status == "slicing");
+          if (is_printing) {
+            id(auto_select_filament_preset)->execute();
+          }
+
   # Status LED control - updates LED based on system state
   # Checks conditions in priority order and sets appropriate color/effect
   - id: update_status_led
@@ -333,7 +361,7 @@ script:
 
           // Over temperature warning - strobe red
           auto temp = id(current_temperature).state;
-          if (!isnan(temp) && temp > 60.0) {
+          if (!isnan(temp) && temp > ${overtemp_led_warning_threshold}) {
             auto call = id(status_led).turn_on();
             call.set_effect("Error Strobe");
             call.perform();
@@ -387,7 +415,7 @@ esphome:
           ESP_LOGI("boot", "Boot complete - emergency stop checks now active");
   platformio_options:
     build_flags: 
-      - -Os # Optimize for size to fit within 1MB flash of ESP8285
+      - -Os # Optimize for size
       - -DNDEBUG # Disable debug assertions
 
 # Enable Home Assistant API
@@ -628,8 +656,6 @@ sensor:
 
                 if (boot_ready && id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
                   if (!emergency_active) {
-                    char reason[160];
-                    id(emergency_stop).turn_on();
                     ESP_LOGE("safety",
                       "EMERGENCY: Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
                       temp_rate, "${temp_unit_label}", "${temp_unit_label}");
@@ -690,6 +716,7 @@ sensor:
                     "${temp_unit_label}"
                   );
                   id(trigger_emergency_stop)->execute();
+        - script.execute: update_status_led
     id: current_temperature
     icon: "mdi:thermometer"
     web_server:
@@ -771,18 +798,24 @@ text_sensor:
     icon: "mdi:thermostat"
     lambda: |-
       uint16_t v = modbus_controller::word_from_hex_str(x, 0);
-      if (v == 0) {
-        ESP_LOGI("heater", "Chamber heater stopped");
-        return std::string("Stopped");
-      }
-      if (v == 1) {
-        ESP_LOGI("heater", "Chamber heater active");
-        return std::string("Active");
-      }
+      if (v == 0) return std::string("Stopped");
+      if (v == 1) return std::string("Active");
       return std::string("Unknown");
     on_value:
       then:
+        - lambda: |-
+            if (x != id(last_controller_status_logged)) {
+              id(last_controller_status_logged) = x;
+              if (x == "Stopped") {
+                ESP_LOGI("heater", "Chamber heater stopped");
+              } else if (x == "Active") {
+                ESP_LOGI("heater", "Chamber heater active");
+              } else {
+                ESP_LOGW("heater", "Chamber heater status unknown");
+              }
+            }
         - script.execute: check_fan_failure
+        - script.execute: update_status_led
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -825,15 +858,22 @@ text_sensor:
     icon: "mdi:temperature-auto"
     lambda: |-
       uint16_t v = modbus_controller::word_from_hex_str(x, 0);
-      if (v == 0) {
-        ESP_LOGI("heater", "Chamber heater operating in Celsius");
-        return std::string("Celsius");
-      }
-      if (v == 1) {
-        ESP_LOGI("heater", "Chamber heater operating in Fahrenheit");
-        return std::string("Fahrenheit");
-      }
+      if (v == 0) return std::string("Celsius");
+      if (v == 1) return std::string("Fahrenheit");
       return std::string("Unknown");
+    on_value:
+      then:
+        - lambda: |-
+            if (x != id(last_temperature_unit_logged)) {
+              id(last_temperature_unit_logged) = x;
+              if (x == "Celsius") {
+                ESP_LOGI("heater", "Chamber heater operating in Celsius");
+              } else if (x == "Fahrenheit") {
+                ESP_LOGI("heater", "Chamber heater operating in Fahrenheit");
+              } else {
+                ESP_LOGW("heater", "Chamber heater temperature unit unknown");
+              }
+            }
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -849,15 +889,22 @@ text_sensor:
     icon: "mdi:thermostat-cog"
     lambda: |-
       uint16_t v = modbus_controller::word_from_hex_str(x, 0);
-      if (v == 0) {
-        ESP_LOGI("heater", "Chamber heater operating in Heating mode");
-        return std::string("Heating");
-      }
-      if (v == 1) {
-        ESP_LOGI("heater", "Chamber heater operating in Cooling mode");
-        return std::string("Cooling");
-      }
+      if (v == 0) return std::string("Heating");
+      if (v == 1) return std::string("Cooling");
       return std::string("Unknown");
+    on_value:
+      then:
+        - lambda: |-
+            if (x != id(last_controller_mode_logged)) {
+              id(last_controller_mode_logged) = x;
+              if (x == "Heating") {
+                ESP_LOGI("heater", "Chamber heater operating in Heating mode");
+              } else if (x == "Cooling") {
+                ESP_LOGI("heater", "Chamber heater operating in Cooling mode");
+              } else {
+                ESP_LOGW("heater", "Chamber heater controller mode unknown");
+              }
+            }
     web_server:
       sorting_group_id: sorting_group_sensors
 
@@ -956,22 +1003,19 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
+            const bool is_printing =
+                (x == "running" || x == "prepare" || x == "slicing");
             if (x == "finish" || x == "failed" || x == "offline") {
               // Print ended - turn off chamber heater
               auto call = id(filament_temp_preset).make_call();
               call.set_option("Off");
               call.perform();
               ESP_LOGI("bambu", "Print ended, automatically turning off chamber heater");
-            } else if (x == "running" || x == "prepare" || x == "slicing") {
+            } else if (is_printing) {
               // Print started - auto-select chamber temp based on current filament
               ESP_LOGI("bambu", "Print started, auto-selecting chamber temperature");
             }
-        - lambda: |-
-            // Cache printer status to avoid repeated comparisons
-            bool is_printing = (x == "running" || x == "prepare" || x == "slicing");
-            if (is_printing) {
-              id(auto_select_filament_preset)->execute();
-            }
+        - script.execute: maybe_auto_select_filament_preset
 
   - platform: homeassistant
     name: "Bambu Active Filament Type"
@@ -983,13 +1027,7 @@ text_sensor:
       then:
         - lambda: |-
             ESP_LOGI("bambu", "Active filament type changed to: %s", x.c_str());
-        - lambda: |-
-            // Only auto-select if printer is actively printing or preparing
-            const auto& status = id(bambu_printer_status).state;
-            bool is_printing = (status == "running" || status == "prepare" || status == "slicing");
-            if (is_printing) {
-              id(auto_select_filament_preset)->execute();
-            }
+        - script.execute: maybe_auto_select_filament_preset
     web_server:
       sorting_group_id: sorting_group_diagnostic
 
@@ -1378,8 +1416,8 @@ interval:
                 ESP_LOGE("safety", "EMERGENCY: No temperature updates received for >${comms_timeout_ms}ms");
                 id(trigger_emergency_stop)->execute();
 
-  # Status LED update - refreshes LED state every 10 seconds
-  - interval: 10s
+  # Status LED fallback refresh - primary updates are event-driven
+  - interval: 60s
     then:
       - script.execute: update_status_led
 
