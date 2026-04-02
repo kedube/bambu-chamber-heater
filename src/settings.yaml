@@ -1,0 +1,36 @@
+substitutions:
+  device_name: "chamber-heater"
+  friendly_name: "Chamber Heater Controller"
+  device_description: "Modbus interface for Sinilink XY-SA/ST temperature controllers"
+  device_area: "Office"
+  bambu_printer_entity_id: !secret bambu_printer_id
+  sw_version: "1.7.0"
+  pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pctg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  abs_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  asa_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pc_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pet_temp: "50" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa_temp: "60" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa6_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa12_temp: "60" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pa612_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  ppa_temp: "70" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pps_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pp_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  pe_temp: "75" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  paht_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
+  max_temp_rise_rate: "0.5"
+  baud_rate: "115200"
+  modbus_slave_address: "0x1"
+  modbus_update_interval: "10s"
+  temp_multiplier: "0.1"
+  temp_read_lambda: "return x * 0.1f;"
+  temp_write_lambda: "return (int16_t) lroundf(x * 10.0f);"
+  comms_timeout_ms: "90000"
+  watchdog_interval: "30s"
+  emergency_check_delay: "15s"
+  hide_sleep_switch: "true"
+  hide_backlight_setting: "true"

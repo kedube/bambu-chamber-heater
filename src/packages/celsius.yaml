@@ -1,0 +1,182 @@
+#
+# Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers.
+# Shared Celsius unit package for ESP8285 and ESP32-C6-Zero builds.
+# Copyright (C) 2026    Katherine Dubé
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+# ========================================
+# CELSIUS CONFIGURATION
+# ========================================
+# This file defines temperature unit settings and number entities for Celsius operation.
+# To use Fahrenheit instead, switch the unit package in the selected top-level YAML.
+#
+# Temperature ranges are set to match the physical controller's capabilities:
+#   - Operating thresholds: 0-85°C (32-185°F)
+#   - Alarm limits: -40-110°C (-40-230°F)
+#   - Calibration offset: ±10°C (±18°F)
+
+substitutions:
+  temp_unit: "Celsius"
+  temp_unit_label: "°C"
+
+globals:
+  # Filament-specific temperature presets with ±1°C hysteresis
+  # Hysteresis prevents rapid relay cycling (chatter) by creating a 2°C operating band
+  # Format: {start_temp, stop_temp} where start < stop for heating mode
+  # Example: PLA at 22°C uses 21°C (start heating) to 23°C (stop heating)
+  # Note: For cooling mode, you would configure these with start > stop
+  - id: filament_presets
+    type: std::map<std::string, std::pair<float, float>>
+    initial_value: |-
+      []() {
+        std::map<std::string, std::pair<float, float>> presets;
+        presets.emplace("PLA", std::make_pair(${pla_temp} - 1, ${pla_temp} + 1));
+        presets.emplace("TPU", std::make_pair(${tpu_temp} - 1, ${tpu_temp} + 1));
+        presets.emplace("PETG", std::make_pair(${petg_temp} - 1, ${petg_temp} + 1));
+        presets.emplace("PCTG", std::make_pair(${pctg_temp} - 1, ${pctg_temp} + 1));
+        presets.emplace("ABS", std::make_pair(${abs_temp} - 1, ${abs_temp} + 1));
+        presets.emplace("ASA", std::make_pair(${asa_temp} - 1, ${asa_temp} + 1));
+        presets.emplace("PC", std::make_pair(${pc_temp} - 1, ${pc_temp} + 1));
+        presets.emplace("PET", std::make_pair(${pet_temp} - 1, ${pet_temp} + 1));
+        presets.emplace("PA", std::make_pair(${pa_temp} - 1, ${pa_temp} + 1));
+        presets.emplace("PA6", std::make_pair(${pa6_temp} - 1, ${pa6_temp} + 1));
+        presets.emplace("PA12", std::make_pair(${pa12_temp} - 1, ${pa12_temp} + 1));
+        presets.emplace("PA612", std::make_pair(${pa612_temp} - 1, ${pa612_temp} + 1));
+        presets.emplace("PPA", std::make_pair(${ppa_temp} - 1, ${ppa_temp} + 1));
+        presets.emplace("PPS", std::make_pair(${pps_temp} - 1, ${pps_temp} + 1));
+        presets.emplace("PP", std::make_pair(${pp_temp} - 1, ${pp_temp} + 1));
+        presets.emplace("PE", std::make_pair(${pe_temp} - 1, ${pe_temp} + 1));
+        presets.emplace("PAHT", std::make_pair(${paht_temp} - 1, ${paht_temp} + 1));
+        return presets;
+      }()
+
+number:
+  # ========================================
+  # TEMPERATURE THRESHOLDS (Operating Range)
+  # ========================================
+  # These define when the relay turns on/off during normal operation
+  # Heating mode: low < high (e.g., start at 21°C, stop at 23°C)
+  # Cooling mode: low > high (e.g., start at 23°C, stop at 21°C)
+  # Range limited to safe operating range: 0-85°C
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Low Temp Threshold"
+    address: 0x0006
+    register_type: holding
+    value_type: S_WORD
+    unit_of_measurement: "${temp_unit_label}"
+    min_value: 0
+    max_value: 85
+    step: 0.1
+    mode: box
+    entity_category: config
+    lambda: "${temp_read_lambda}"
+    write_lambda: "${temp_write_lambda}"
+    id: temp_threshold_start
+    icon: "mdi:temperature-low"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "High Temp Threshold"
+    address: 0x0007
+    register_type: holding
+    value_type: S_WORD
+    unit_of_measurement: "${temp_unit_label}"
+    min_value: 0
+    max_value: 85
+    step: 0.1
+    mode: box
+    entity_category: config
+    lambda: "${temp_read_lambda}"
+    write_lambda: "${temp_write_lambda}"
+    id: temp_threshold_stop
+    icon: "mdi:temperature-high"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  # ========================================
+  # TEMPERATURE ALARMS (Safety Limits)
+  # ========================================
+  # These trigger emergency stops when exceeded (if over_temp_shutoff enabled)
+  # Set beyond normal operating range to catch dangerous conditions
+  # Example: If operating at 60°C, set high alarm to 70°C, low alarm to 5°C
+  # Both heating and cooling modes can use these alarms for safety
+  # Range: -40-110°C (controller's full measurement range)
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "High Temp Alarm"
+    address: 0x0008
+    register_type: holding
+    value_type: S_WORD
+    unit_of_measurement: "${temp_unit_label}"
+    min_value: -40
+    max_value: 110
+    step: 0.1
+    mode: box
+    entity_category: config
+    lambda: "${temp_read_lambda}"
+    write_lambda: "${temp_write_lambda}"
+    id: high_temp_alarm
+    icon: "mdi:temperature-chevron-up"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Low Temp Alarm"
+    address: 0x0009
+    register_type: holding
+    value_type: S_WORD
+    unit_of_measurement: "${temp_unit_label}"
+    min_value: -40
+    max_value: 110
+    step: 0.1
+    mode: box
+    entity_category: config
+    lambda: "${temp_read_lambda}"
+    write_lambda: "${temp_write_lambda}"
+    id: low_temp_alarm
+    icon: "mdi:temperature-chevron-down"
+    web_server:
+      sorting_group_id: sorting_group_settings
+
+  # ========================================
+  # TEMPERATURE CALIBRATION
+  # ========================================
+  # Offset applied to temperature sensor reading for calibration
+  # Positive values increase displayed temperature, negative values decrease
+  # Example: If sensor reads 21°C but actual is 22°C, set offset to +1.0
+  # Range: ±10°C
+  - platform: modbus_controller
+    modbus_controller_id: modbus_device
+    name: "Temp Offset"
+    address: 0x000B
+    register_type: holding
+    value_type: S_WORD
+    unit_of_measurement: "${temp_unit_label}"
+    min_value: -10
+    max_value: 10
+    step: 0.1
+    mode: box
+    entity_category: config
+    lambda: "${temp_read_lambda}"
+    write_lambda: "${temp_write_lambda}"
+    id: temp_offset
+    icon: "mdi:temperature-plus"
+    web_server:
+      sorting_group_id: sorting_group_settings
