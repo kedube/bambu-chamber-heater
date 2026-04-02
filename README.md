@@ -222,6 +222,7 @@ esphome run esphome/temp_controller.yaml
 ### ESP8285 / XY-WFPOW
 For the ESP8285, use the USB-to-TTL adapter programmer at **3.3V** and the XY-WFPOW flashing pins:
 
+![Alt ESP8285 Diagram](https://raw.githubusercontent.com/creepystefan/ESPhome-Sinilink-XY-WFPOW/main/src/docs/devices/sinilink_XY-WFPOW_pinout.jpg)
 ```text
 GND -> GND
 TXD -> RXD
