@@ -23,13 +23,6 @@
 # the temperature-unit and device packages here as needed.
 #
 
-substitutions:
-  device_description: "ESP32-C6-Zero-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
-  sw_version: "1.6.3.esp32"
-  fan_min_rpm: "200"
-  fan_fail_timeout_seconds: "10"
-  overtemp_led_warning_threshold: "60.0"
-
 globals:
   - id: fan_low_rpm_since_ms
     type: uint32_t

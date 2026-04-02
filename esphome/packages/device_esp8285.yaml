@@ -23,10 +23,6 @@
 # the temperature-unit and device packages here as needed.
 #
 
-substitutions:
-  device_description: "ESP8285-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
-  sw_version: "1.6.3"
-
 script:
   - id: check_fan_failure
     mode: restart

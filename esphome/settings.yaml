@@ -1,7 +1,7 @@
 substitutions:
   device_name: "chamber-heater"
   friendly_name: "Chamber Heater Controller"
-  device_description: "Modbus interface for Sinilink XY-SA/ST temperature controllers"
+  device_description: "ESPHome Modbus interface for Sinilink XY-SA/ST temperature controllers"
   device_area: "Office"
   bambu_printer_entity_id: !secret bambu_printer_id
   sw_version: "1.7.0"
@@ -34,3 +34,7 @@ substitutions:
   emergency_check_delay: "15s"
   hide_sleep_switch: "true"
   hide_backlight_setting: "true"
+  # ESP32-C6-Zero-specific settings
+  fan_min_rpm: "200"
+  fan_fail_timeout_seconds: "10"
+  overtemp_led_warning_threshold: "60.0"
