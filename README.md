@@ -233,8 +233,8 @@ RST -> not connected
 ```
 
 Adapter board photos:
-![Alt Programming Adapter Board 1](images/adapter_board-1.jpeg)
-![Alt Programming Adapter Board 2](images/adapter_board-2.jpeg)
+![Alt Programming Adapter Board 1](docs/images/adapter_board-1.jpeg)
+![Alt Programming Adapter Board 2](docs/images/adapter_board-2.jpeg)
 
 ### ESP32-C6-Zero
 For the ESP32-C6-Zero, you must connect the board via USB-C and flash it directly. It will prompt you after a successful build for where to upload the code. 
