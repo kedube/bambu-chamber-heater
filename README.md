@@ -1,4 +1,4 @@
-# Bambu Chamber Heater - ESPHome Controller
+# Bambu Chamber Heater - ESPHome Temp Controller
 ESPHome implementation to remotely control **Sinilink XY-SA/ST series temperature controllers** for *Bambu Lab P1S/X1 Carbon 3D printers*. The repository now supports both the **ESP8285-based XY-WFPOW** module and the **Waveshare ESP32-C6-Zero** from one shared codebase.
 
 This project allows you to automatically manage a chamber heater, link it to print jobs, and control it through Home Assistant or the built-in web interface. It was inspired by the [BambuSauna project](https://makerworld.com/en/models/2417482-bambusauna-for-sinilink-xy-sa-st-temp-controller).
@@ -16,7 +16,7 @@ This project allows you to automatically manage a chamber heater, link it to pri
 
 ## Repository Layout
 
-- `src/settings.yaml` contains the shared substitutions and default build settings.
+- `src/settings.yaml` contains the shared substitutions, default build settings, and additional shared configuration options you may want to customize.
 - `src/packages/controller_shared.yaml` contains the shared controller logic, Modbus entities, automations, and safety behavior.
 - `src/packages/device_esp8285.yaml` contains ESP8285-only framework, GPIO, and hardware configuration.
 - `src/packages/device_esp32_c6_zero.yaml` contains ESP32-C6-Zero-only framework, GPIO, fan monitoring, LED logic, and helper include usage.
@@ -142,7 +142,6 @@ The ESP32-C6-Zero retrofit uses a separate module and adds RPM monitoring and RG
 ![Alt screenshot](images/esp32-wiring-harness.jpeg)
 ![Alt screenshot](images/bambusauna-4.jpeg)
 ![Alt screenshot](images/bambusauna-esp32.jpeg)
-![Alt screenshot](images/bambusauna-2.jpeg)
 
 The onboard WS2812 LED on GPIO8 is used for status:
 
@@ -191,6 +190,7 @@ Important values include:
 - `bambu_printer_id`
 
 Shared substitutions such as `device_name`, `friendly_name`, software version, filament preset defaults, and Modbus timing are now defined in `src/settings.yaml`.
+Use that file for additional shared configuration changes before editing the controller or device packages directly.
 
 ### 4. Choose Device and Temperature Unit
 
