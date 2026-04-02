@@ -109,7 +109,7 @@ Safety Notes:
 ## Wiring Diagram
 Here is a basic wiring diagram for AC-powered Sinilink XY-SA Series Temperature Controllers. The Sinilink XY-ST Series Temperature Controllers are DC-powered and require an external 24V power supply and entirely different wiring schematic. 
 
-![Alt Wiring Diagram](images/bambusauna_wiring_diagram.png)
+![Alt Wiring Diagram](images/bambusauna_wiring_diagram-esp32.png)
 
 ![Alt ESP32 Pinout](images/esp32-c6-zero-pinout.png)
 
