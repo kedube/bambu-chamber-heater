@@ -1,0 +1,238 @@
+#
+# Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers.
+# Shared Fahrenheit unit package for ESP8285 and ESP32-C6-Zero builds.
+# Copyright (C) 2026    Katherine Dubé
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+#
+# Main entrypoint for the unified chamber heater configuration.
+# Keep the shared logic in packages/controller_shared.yaml and only switch
+# the temperature-unit and device packages here as needed.
+#
+
+substitutions:
+  device_description: "ESP32-C6-Zero-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
+  sw_version: "1.6.3.esp32"
+  fan_min_rpm: "200"
+  fan_fail_timeout_seconds: "10"
+  overtemp_led_warning_threshold: "60.0"
+
+globals:
+  - id: fan_low_rpm_since_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+script:
+  - id: check_fan_failure
+    mode: restart
+    then:
+      - lambda: |-
+          bool boot_ready = id(boot_complete);
+          if (!boot_ready || id(emergency_stop).state) {
+            id(fan_low_rpm_since_ms) = 0;
+            return;
+          }
+
+          const float rpm = id(fan_rpm).state;
+          if (isnan(rpm) || id(controller_status).state != "Active") {
+            id(fan_low_rpm_since_ms) = 0;
+            return;
+          }
+
+          if (rpm < ${fan_min_rpm}) {
+            if (id(fan_low_rpm_since_ms) == 0) {
+              id(fan_low_rpm_since_ms) = millis();
+              return;
+            }
+
+            if ((millis() - id(fan_low_rpm_since_ms)) >=
+                (${fan_fail_timeout_seconds}UL * 1000UL)) {
+              id(fan_low_rpm_since_ms) = 0;
+              ESP_LOGE(
+                  "safety",
+                  "EMERGENCY: Fan RPM %.0f below minimum %s for at least %s seconds while heater is active",
+                  rpm,
+                  "${fan_min_rpm}",
+                  "${fan_fail_timeout_seconds}");
+              id(trigger_emergency_stop)->execute();
+            }
+          } else {
+            id(fan_low_rpm_since_ms) = 0;
+          }
+
+  - id: update_status_led
+    mode: restart
+    then:
+      - lambda: |-
+          if (id(emergency_stop).state) {
+            auto call = id(status_led).turn_on();
+            call.set_rgb(1.0, 0.0, 0.0);
+            call.set_brightness(1.0);
+            call.set_effect("None");
+            call.perform();
+            return;
+          }
+
+          if (!wifi::global_wifi_component->is_connected()) {
+            auto call = id(status_led).turn_on();
+            call.set_rgb(0.0, 0.0, 1.0);
+            call.set_brightness(0.75);
+            call.set_effect("Fast Pulse");
+            call.perform();
+            return;
+          }
+
+          auto temp = id(current_temperature).state;
+          if (!isnan(temp) && temp > ${overtemp_led_warning_threshold}) {
+            auto call = id(status_led).turn_on();
+            call.set_effect("Error Strobe");
+            call.perform();
+            return;
+          }
+
+          if (id(controller_status).state == "Active") {
+            auto call = id(status_led).turn_on();
+            call.set_rgb(1.0, 0.5, 0.0);
+            call.set_brightness(0.75);
+            call.set_effect("Slow Pulse");
+            call.perform();
+            return;
+          }
+
+          auto call = id(status_led).turn_on();
+          call.set_rgb(0.0, 1.0, 0.0);
+          call.set_brightness(0.3);
+          call.set_effect("None");
+          call.perform();
+
+esp32:
+  board: esp32-c6-devkitc-1
+  flash_size: 8MB
+  variant: esp32c6
+  cpu_frequency: 160MHz
+  framework:
+    type: esp-idf
+    version: latest
+    advanced:
+      enable_ota_rollback: true
+
+esphome:
+  includes:
+    - ../include/wifi_protocol_helper.h
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: status_led
+    name: Status LED
+    pin:
+      number: GPIO8
+      ignore_strapping_warning: true
+    rgb_order: RGB
+    num_leds: 1
+    chipset: ws2812
+    restore_mode: ALWAYS_OFF
+    effects:
+      - pulse:
+          name: "Slow Pulse"
+          transition_length: 1s
+          update_interval: 1s
+      - pulse:
+          name: "Fast Pulse"
+          transition_length: 0.5s
+          update_interval: 0.5s
+      - strobe:
+          name: "Error Strobe"
+          colors:
+            - state: true
+              brightness: 100%
+              red: 100%
+              green: 0%
+              blue: 0%
+              duration: 500ms
+            - state: false
+              duration: 500ms
+    internal: true
+    icon: "mdi:led-on"
+    web_server:
+      sorting_group_id: sorting_group_system
+
+wifi:
+  on_connect:
+    - script.execute: update_status_led
+  on_disconnect:
+    - script.execute: update_status_led
+
+uart:
+  - id: uart_bus
+    tx_pin: GPIO0
+    rx_pin: GPIO1
+    baud_rate: ${baud_rate}
+    data_bits: 8
+    parity: NONE
+    stop_bits: 1
+    debug:
+      direction: BOTH
+      dummy_receiver: false
+      after:
+        delimiter: "\n"
+      sequence:
+        - lambda: |-
+            if (id(modbus_debugging)) {
+              UARTDebug::log_hex(direction, bytes, ' ');
+            }
+
+sensor:
+  - platform: pulse_counter
+    pin:
+      number: GPIO2
+      mode:
+        input: true
+        pullup: true
+    name: "Fan Speed"
+    id: fan_rpm
+    unit_of_measurement: "RPM"
+    accuracy_decimals: 0
+    update_interval: 5s
+    count_mode:
+      rising_edge: DISABLE
+      falling_edge: INCREMENT
+    internal_filter: 13us
+    filters:
+      - multiply: 0.5
+    on_value:
+      then:
+        - script.execute: check_fan_failure
+    icon: "mdi:fan"
+    web_server:
+      sorting_group_id: sorting_group_sensors
+
+text_sensor:
+  - platform: template
+    name: "WIFI Protocol"
+    entity_category: diagnostic
+    id: wifi_protocol
+    icon: "mdi:wifi-cog"
+    lambda: |-
+      return get_negotiated_wifi_protocol();
+    update_interval: 300s
+    web_server:
+      sorting_group_id: sorting_group_diagnostic
+
+interval:
+  - interval: 60s
+    then:
+      - script.execute: update_status_led

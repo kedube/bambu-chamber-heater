@@ -1,6 +1,6 @@
 #
-# Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers using the
-# ESP32-based microcontroller. Designed to work with Bambu 3D Printers as a chamber heater controller.
+# Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers.
+# Shared Celsius unit package for ESP8285 and ESP32-C6-Zero builds.
 # Copyright (C) 2026    Katherine Dubé
 #
 # This program is free software: you can redistribute it and/or modify
@@ -21,7 +21,7 @@
 # CELSIUS CONFIGURATION
 # ========================================
 # This file defines temperature unit settings and number entities for Celsius operation.
-# To use Fahrenheit instead, modify the include in temperature_controller.yaml to use fahrenheit.yaml
+# To use Fahrenheit instead, switch the unit package in the selected top-level YAML.
 #
 # Temperature ranges are set to match the physical controller's capabilities:
 #   - Operating thresholds: 0-85°C (32-185°F)

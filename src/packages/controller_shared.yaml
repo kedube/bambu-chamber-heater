@@ -1,6 +1,6 @@
 #
-# Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers using the 
-# ESP32-based microcontroller. Designed to work with Bambu 3D Printers as a chamber heater controller.
+# Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers.
+# Shared controller logic for ESP8285 (XY-WFPOW) and ESP32-C6-Zero device targets.
 # Copyright (C) 2026    Katherine Dubé
 #
 # This program is free software: you can redistribute it and/or modify
@@ -17,64 +17,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-substitutions:
-  device_name: "chamber-heater"
-  friendly_name: "Chamber Heater Controller"
-  device_description: "ESP32-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
-  device_area: "Office"
-  bambu_printer_entity_id: !secret bambu_printer_id
-  sw_version: "1.6.3.esp32"
-  pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pctg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  abs_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  asa_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pc_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pet_temp: "50" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pa_temp: "60" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pa6_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pa12_temp: "60" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pa612_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  ppa_temp: "70" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pps_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pp_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pe_temp: "75" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  paht_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  # Maximum safe temperature rise rate (degrees per second)
-  # 0.5°C/sec = 30°C/min is reasonable for chamber heating but would indicate runaway heating
-  # Only checks RISING temperature - falling is normal when heater turns off
-  max_temp_rise_rate: "0.5"
-  baud_rate: "115200"
-  modbus_slave_address: "0x1"
-  modbus_update_interval: "10s"
-  temp_multiplier: "0.1"
-  temp_read_lambda: "return x * 0.1f;"
-  temp_write_lambda: "return (int16_t) lroundf(x * 10.0f);"
-  # Communication timeout in milliseconds (90000ms = 90s)
-  # Must be > 3x modbus_update_interval (10s) to avoid false positives
-  # Checked every 30s by interval task
-  comms_timeout_ms: "90000"
-  # Fan safety thresholds for print-time interlock
-  fan_min_rpm: "200"
-  fan_fail_timeout_seconds: "10"
-  watchdog_interval: "30s"
-  emergency_check_delay: "15s" # Delay after boot before enabling emergency stop checks to allow sensor sync
-  # Status LED over-temperature warning threshold
-  # Set per temperature unit to avoid incorrect warnings when using Fahrenheit
-  overtemp_led_warning_threshold: "60.0"
-  # Set to "true" to hide sleep switch if not supported by controller, "false" to show it
-  hide_sleep_switch: "true"
-  # Set to "true" to hide backlight select switch if not supported by controller, "false" to show it
-  hide_backlight_setting: "true"
-
-packages:
-  select_units: !include 
-    # Select the appropriate temperature unit file to include based on your preference. 
-    # Both files define the same entities, but with different units and value ranges.
-    file: celsius.yaml
-    #file: fahrenheit.yaml
-
 globals:
   # Filament type aliases - maps Bambu filament names to preset names
   - id: filament_type_map
@@ -82,10 +24,10 @@ globals:
     restore_value: no
     initial_value: |-
       {
-        {"PLA", "PLA"}, {"PLA SILK", "PLA"}, {"PLA+", "PLA"}, {"PLA-CF", "PLA"}, 
+        {"PLA", "PLA"}, {"PLA SILK", "PLA"}, {"PLA+", "PLA"}, {"PLA-CF", "PLA"},
         {"MATTE PLA", "PLA"}, {"PLA HIGH SPEED", "PLA"},
         {"TPU", "TPU"}, {"TPU 95A", "TPU"}, {"TPU 85A HF", "TPU"},
-        {"PETG", "PETG"}, {"PETG HF", "PETG"}, {"PETG-CF", "PETG"}, 
+        {"PETG", "PETG"}, {"PETG HF", "PETG"}, {"PETG-CF", "PETG"},
         {"PETG-RCF", "PETG"}, {"PETG-ESD", "PETG"},
         {"PCTG", "PCTG"},
         {"ABS", "ABS"}, {"ABS-GF", "ABS"},
@@ -102,81 +44,54 @@ globals:
         {"PE", "PE"}, {"PE-CF", "PE"},
         {"PAHT-CF", "PAHT"}
       }
-  # Restart confirmation flag - user must enable before restarting
   - id: restart_confirmed
     type: bool
     restore_value: no
-    initial_value: 'false'
-  # Modbus debugging flag - enables verbose UART logging when true
+    initial_value: "false"
   - id: modbus_debugging
     type: bool
     restore_value: no
-    initial_value: 'false'
-  # Timestamp of last temperature update - used by communication watchdog
+    initial_value: "false"
   - id: last_temp_update_ms
     type: uint32_t
     restore_value: no
-    initial_value: '0'
-  # Communication fault latch - prevents duplicate error messages
+    initial_value: "0"
   - id: comms_fault_latched
     type: bool
     restore_value: no
-    initial_value: 'false'
-  # Flag indicating if we have at least one valid temperature reading
-  # Used to prevent false rate-of-change alarms on first boot
-  # Using a flag instead of checking temp != 0.0 because 0.0°C is a valid temperature
+    initial_value: "false"
   - id: has_last_valid_temp
     type: bool
     restore_value: no
-    initial_value: 'false'
-  # Previous temperature reading for rate-of-change calculation
-  # Initialized to 0.0 but only used when has_last_valid_temp is true
+    initial_value: "false"
   - id: last_valid_temp
     type: float
     restore_value: no
-    initial_value: '0.0'
-  # Timestamp of last temperature sample in milliseconds
-  # Used with unsigned arithmetic to handle millis() wraparound at 49.7 days
+    initial_value: "0.0"
   - id: last_temp_sample_ms
     type: uint32_t
     restore_value: no
-    initial_value: '0'
-  # Timestamp when first emergency condition occurred
-  # Set to 0 when emergency cleared, preserves first emergency time if multiple triggers
+    initial_value: "0"
   - id: emergency_stop_timestamp
     type: unsigned long
     restore_value: no
-    initial_value: '0'
-  # Boot initialization complete flag
-  # Prevents emergency stop triggers during initial sensor synchronization
+    initial_value: "0"
   - id: boot_complete
     type: bool
     restore_value: no
-    initial_value: 'false'
-  # Home Assistant API connection status - used to trigger emergency stop if disconnected
+    initial_value: "false"
   - id: api_connection
     type: bool
     restore_value: no
-    initial_value: 'false'
-  # Timestamp when fan RPM first dropped below threshold while heating is active
-  - id: fan_low_rpm_since_ms
-    type: uint32_t
-    restore_value: no
-    initial_value: '0'
-  # Tracks whether emergency stop was triggered by fault or exceeding a safety threshold
-  # Used to block automatic emergency-stop clearing until the user clears it manually
+    initial_value: "false"
   - id: emergency_stop_fault
     type: bool
     restore_value: no
-    initial_value: 'false'
-  # Tracks whether the user has requested a manual emergency-stop clear.
-  # The fault latch is only cleared after the underlying Modbus switch
-  # actually turns off successfully.
+    initial_value: "false"
   - id: emergency_stop_manual_clear_pending
     type: bool
     restore_value: no
-    initial_value: 'false'
-  # Track last logged Modbus text sensor states to avoid repeated identical logs on every poll
+    initial_value: "false"
   - id: last_controller_status_logged
     type: std::string
     restore_value: no
@@ -191,9 +106,6 @@ globals:
     initial_value: '"__init__"'
 
 script:
-  # Ensures controller's temperature unit matches the configured unit in this file
-  # Runs on boot to sync controller if it was changed via physical buttons
-  # Uses queued mode to handle multiple calls during startup
   - id: write_temp_unit
     mode: queued
     then:
@@ -205,13 +117,10 @@ script:
             - select.set:
                 id: set_temperature_unit
                 option: "${temp_unit}"
-  # Safety timeout for restart confirmation
-  # User must enable restart_confirmation switch within 10 seconds before pressing restart
-  # Prevents accidental restarts during operation
   - id: restart_confirm_timeout
     mode: restart
     then:
-      - delay: 10s  # 10 second window to confirm restart
+      - delay: 10s
       - if:
           condition:
             lambda: "return id(restart_confirmed);"
@@ -220,8 +129,6 @@ script:
                 format: "Restart confirmation timed out"
                 level: INFO
             - switch.turn_off: restart_confirmation
-  # Centralized emergency stop trigger with reason logging
-  # Consolidates emergency stop logic to ensure consistent logging
   - id: trigger_emergency_stop
     mode: restart
     then:
@@ -234,17 +141,13 @@ script:
                 id(emergency_stop_fault) = true;
                 ESP_LOGE("safety", "EMERGENCY: Triggering Emergency Stop");
             - switch.turn_on: emergency_stop_internal
-
-  # Safety check for Bambu printer connectivity
-  # Only evaluates once boot is complete, the HA API is connected,
-  # and Home Assistant has published a printer online/offline state.
   - id: check_bambu_printer_online
     mode: restart
     then:
       - if:
           condition:
             lambda: |-
-              bool boot_ready = id(boot_complete);  // Cache to avoid repeated global access
+              bool boot_ready = id(boot_complete);
               bool api_ready = id(api_connection);
               bool printer_state_ready = id(bambu_printer_online).has_state();
               return boot_ready &&
@@ -255,56 +158,20 @@ script:
             - lambda: |-
                 ESP_LOGE("safety", "EMERGENCY: Bambu printer is offline");
                 id(trigger_emergency_stop)->execute();
-
-  # Fan safety interlock
-  # Triggers emergency stop only after low RPM persists while heating is active
-  - id: check_fan_failure
-    mode: restart
-    then:
-      - lambda: |-
-          bool boot_ready = id(boot_complete);  // Cache to avoid repeated global access
-          if (!boot_ready || id(emergency_stop).state) {
-            id(fan_low_rpm_since_ms) = 0;
-            return;
-          }
-
-          const float rpm = id(fan_rpm).state;
-          if (isnan(rpm) || id(controller_status).state != "Active") {
-            id(fan_low_rpm_since_ms) = 0;
-            return;
-          }
-
-          if (rpm < ${fan_min_rpm}) {
-            if (id(fan_low_rpm_since_ms) == 0) {
-              id(fan_low_rpm_since_ms) = millis();
-              return;
-            }
-
-            if ((millis() - id(fan_low_rpm_since_ms)) >= (${fan_fail_timeout_seconds}UL * 1000UL)) {
-              id(fan_low_rpm_since_ms) = 0;
-              ESP_LOGE("safety", "EMERGENCY: Fan RPM %.0f below minimum %s for at least %s seconds while heater is active", rpm, "${fan_min_rpm}", "${fan_fail_timeout_seconds}");
-              id(trigger_emergency_stop)->execute();
-            }
-          } else {
-            id(fan_low_rpm_since_ms) = 0;
-          }
-
-  # Auto-select chamber temperature preset based on Bambu printer's filament type
-  # Reads current filament type and sets appropriate chamber heating preset
   - id: auto_select_filament_preset
     mode: restart
     then:
       - lambda: |-
-          const std::string& filament_raw = id(bambu_filament_type).state;
+          const std::string &filament_raw = id(bambu_filament_type).state;
 
-          // Convert to uppercase efficiently using transform
           std::string filament_upper;
           filament_upper.reserve(filament_raw.length());
-          std::transform(filament_raw.begin(), filament_raw.end(),
-                         std::back_inserter(filament_upper),
-                         [](unsigned char c){ return std::toupper(c); });
+          std::transform(
+              filament_raw.begin(),
+              filament_raw.end(),
+              std::back_inserter(filament_upper),
+              [](unsigned char c) { return std::toupper(c); });
 
-          // Single map lookup
           auto type_it = id(filament_type_map).find(filament_upper);
 
           if (type_it != id(filament_type_map).end()) {
@@ -312,118 +179,49 @@ script:
             call.set_option(type_it->second);
             call.perform();
 
-            ESP_LOGI("bambu", "Auto-set chamber temperature preset to %s (%s filament)",
-                     type_it->second.c_str(), filament_raw.c_str());
+            ESP_LOGI(
+                "bambu",
+                "Auto-set chamber temperature preset to %s (%s filament)",
+                type_it->second.c_str(),
+                filament_raw.c_str());
           } else {
-            ESP_LOGW("bambu", "Unknown filament type: %s - keeping current preset",
-                     filament_raw.c_str());
+            ESP_LOGW(
+                "bambu",
+                "Unknown filament type: %s - keeping current preset",
+                filament_raw.c_str());
           }
-
-  # Reuse one definition of "printer is actively printing/preparing"
   - id: maybe_auto_select_filament_preset
     mode: restart
     then:
       - lambda: |-
-          const auto& status = id(bambu_printer_status).state;
+          const auto &status = id(bambu_printer_status).state;
           const bool is_printing =
               (status == "running" || status == "prepare" || status == "slicing");
           if (is_printing) {
             id(auto_select_filament_preset)->execute();
           }
 
-  # Status LED control - updates LED based on system state
-  # Checks conditions in priority order and sets appropriate color/effect
-  - id: update_status_led
-    mode: restart
-    then:
-      - lambda: |-
-          // Priority order: Emergency > WiFi > Over-temp > Heating > Normal/Idle
-
-          // Emergency stop - solid red
-          if (id(emergency_stop).state) {
-            auto call = id(status_led).turn_on();
-            call.set_rgb(1.0, 0.0, 0.0);
-            call.set_brightness(1.0);
-            call.set_effect("None");
-            call.perform();
-            return;
-          }
-
-          // WiFi disconnected - pulsing blue
-          if (!wifi::global_wifi_component->is_connected()) {
-            auto call = id(status_led).turn_on();
-            call.set_rgb(0.0, 0.0, 1.0);
-            call.set_brightness(0.75);
-            call.set_effect("Fast Pulse");
-            call.perform();
-            return;
-          }
-
-          // Over temperature warning - strobe red
-          auto temp = id(current_temperature).state;
-          if (!isnan(temp) && temp > ${overtemp_led_warning_threshold}) {
-            auto call = id(status_led).turn_on();
-            call.set_effect("Error Strobe");
-            call.perform();
-            return;
-          }
-
-          // Heating active (controller status = "Active") - pulsing orange
-          if (id(controller_status).state == "Active") {
-            auto call = id(status_led).turn_on();
-            call.set_rgb(1.0, 0.5, 0.0);
-            call.set_brightness(0.75);
-            call.set_effect("Slow Pulse");
-            call.perform();
-            return;
-          }
-
-          // Normal/Idle - dim green
-          auto call = id(status_led).turn_on();
-          call.set_rgb(0.0, 1.0, 0.0);
-          call.set_brightness(0.3);
-          call.set_effect("None");
-          call.perform();
-
-esp32:
-  board: esp32-c6-devkitc-1
-  flash_size: 8MB
-  variant: esp32c6
-  cpu_frequency: 160MHz
-  framework:
-    type: esp-idf
-    version: latest
-    advanced:
-      enable_ota_rollback: true
-
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
   comment: ${device_description}
   area: ${device_area}
-  includes:
-    - ../include/wifi_protocol_helper.h
   on_boot:
     priority: 200
     then:
       - script.execute: write_temp_unit
-      # Wait for initial modbus synchronization before enabling emergency checks
-      # Prevents false emergency stops during boot
       - delay: ${emergency_check_delay}
       - lambda: |-
           id(boot_complete) = true;
           ESP_LOGI("boot", "Boot complete - emergency stop checks now active");
   platformio_options:
-    build_flags: 
-      - -Os # Optimize for size
-      - -DNDEBUG # Disable debug assertions
+    build_flags:
+      - -Os
+      - -DNDEBUG
 
-# Enable Home Assistant API
 api:
-  # Comment/uncomment encryption key if you want to use API features or integrate with Home Assistant
   encryption:
     key: !secret encryption_key
-
   on_client_connected:
     then:
       - lambda: |-
@@ -433,7 +231,7 @@ api:
     then:
       - if:
           condition:
-            lambda: 'return id(api_connection);'
+            lambda: "return id(api_connection);"
           then:
             - lambda: |-
                 id(api_connection) = false;
@@ -442,52 +240,11 @@ api:
 
 logger:
   level: DEBUG
-  # Log Levels: NONE, ERROR, WARN, INFO, DEBUG, VERBOSE, VERY_VERBOSE
-  # Disable logging via UART, since we're using this for modbus communication
-  baud_rate: 0 #Serial logging can be disabled by setting baud_rate: 0.
-
-# Enable status LED
-light:
-  - platform: esp32_rmt_led_strip
-    id: status_led
-    name: Status LED
-    pin: 
-      number: GPIO8
-      ignore_strapping_warning: true
-    rgb_order: RGB
-    num_leds: 1
-    chipset: ws2812
-    restore_mode: ALWAYS_OFF
-    effects:
-      - pulse:
-          name: "Slow Pulse"
-          transition_length: 1s
-          update_interval: 1s
-      - pulse:
-          name: "Fast Pulse"
-          transition_length: 0.5s
-          update_interval: 0.5s
-      - strobe:
-          name: "Error Strobe"
-          colors:
-            - state: true
-              brightness: 100%
-              red: 100%
-              green: 0%
-              blue: 0%
-              duration: 500ms
-            - state: false
-              duration: 500ms
-    internal: true
-    icon: "mdi:led-on"
-    web_server:
-      sorting_group_id: sorting_group_system
+  baud_rate: 0
 
 ota:
-  # Keep standard ESPHome OTA (Dashboard/CLI)
   - platform: esphome
     password: !secret ota_password
-  # And enable OTA uploads via the web UI
   - platform: web_server
 
 wifi:
@@ -496,7 +253,6 @@ wifi:
   min_auth_mode: WPA2
   power_save_mode: none
   fast_connect: on
-  # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
     ssid: !secret ap_wifi_ssid
     password: !secret ap_wifi_password
@@ -506,87 +262,8 @@ wifi:
   #  subnet: !secret subnet
   #  dns1: !secret dns1
   #  dns2: !secret dns2
-  # Update LED immediately on WiFi state changes
-  on_connect:
-    - script.execute: update_status_led
-  on_disconnect:
-    - script.execute: update_status_led
 
 captive_portal:
-
-uart:
-  - id: uart_bus
-    tx_pin: GPIO0
-    rx_pin: GPIO1
-    baud_rate: ${baud_rate}
-    data_bits: 8
-    parity: NONE
-    stop_bits: 1   
-    debug:
-      direction: BOTH
-      dummy_receiver: false
-      after:
-        delimiter: "\n"    
-      sequence:
-        - lambda: |-
-            if (id(modbus_debugging)) {
-              UARTDebug::log_hex(direction, bytes, ' '); // Verbose Hex
-            } 
-
-# ========================================
-# MODBUS REGISTER MAP - Sinilink XY-SA/ST
-# ========================================
-#
-# Register addresses for XY-SA/ST temperature controller
-# All registers are 16-bit holding registers unless otherwise noted
-# Temperature values use signed words (S_WORD) with 0.1 multiplier
-#
-# ADDRESS | TYPE   | NAME                    | RANGE/VALUES        | DESCRIPTION
-# --------|--------|-------------------------|---------------------|------------------------------------------
-# 0x0000  | U_WORD | Controller Status       | 0=Stopped, 1=Active | Main relay/controller state
-# 0x0001  | U_WORD | Temp Sensor Status      | 0=Connected, 1=Disc | Temperature sensor connection status
-# 0x0002  | U_WORD | Delay Time Remaining    | 0-999 seconds       | Countdown timer for delayed start
-# 0x0003  | S_WORD | Current Temperature     | -400 to 1100 (*0.1) | Current measured temperature
-# 0x0004  | U_WORD | Temperature Unit        | 0=Celsius, 1=Fahr   | Display and control temperature unit
-# 0x0005  | U_WORD | Controller Mode         | 0=Heating, 1=Cooling| Operating mode (heating vs cooling)
-# 0x0006  | S_WORD | Low Temp Threshold      | -400 to 850 (*0.1)  | Temperature to start heating/cooling
-# 0x0007  | S_WORD | High Temp Threshold     | -400 to 850 (*0.1)  | Temperature to stop heating/cooling
-# 0x0008  | S_WORD | High Temp Alarm         | -400 to 1100 (*0.1) | High temperature alarm threshold
-# 0x0009  | S_WORD | Low Temp Alarm          | -400 to 1100 (*0.1) | Low temperature alarm threshold
-# 0x000A  | U_WORD | Delay Start Time        | 0-999 seconds       | Delay start duration setting
-# 0x000B  | S_WORD | Temperature Offset      | -100 to 100 (*0.1)  | Temperature calibration offset
-# 0x000C  | BOOL   | Alarm Active            | 0=No, 1=Yes         | Temperature alarm status (read-only)
-# 0x000D  | BOOL   | Alarm Sound             | 0=Off, 1=On         | Enable/disable alarm beeper
-# 0x000E  | BOOL   | High Temp Alarm Enable  | 0=Off, 1=On         | Enable high temperature alarm
-# 0x000F  | BOOL   | Low Temp Alarm Enable   | 0=Off, 1=On         | Enable low temperature alarm
-# 0x0010  | BOOL   | Delay Start Enable      | 0=Off, 1=On         | Enable delayed start feature
-# 0x0011  | BOOL   | Emergency Stop          | 0=Off, 1=On         | Emergency stop/disable controller
-# 0x0012  | U_WORD | Modbus Address          | 1-247               | Modbus slave address (requires reboot)
-# 0x0013  | U_WORD | Modbus Baudrate         | See baudrate map    | Serial communication speed
-# 0x0014  | BOOL   | Sleep Mode              | 0=Off, 1=On         | Display sleep/power saving mode
-# 0x0015  | U_WORD | Backlight Level         | 0-7                 | Display backlight brightness (0=off)
-#
-# Baudrate Map (0x0013):
-#   0=9600, 1=14400, 2=19200, 3=38400, 4=56000, 5=57600, 6=115200
-#
-# Temperature Value Encoding:
-#   - Stored as signed 16-bit integers representing temperature in tenths of degrees
-#   - Actual temperature = register_value * 0.1
-#   - Example: register value 235 = 23.5°C
-#
-# Safety Notes:
-#   - Always enable high temp alarm (0x000E) for safety
-#   - Set high temp alarm (0x0008) above normal operating range
-#   - Emergency stop (0x0011) immediately disables heating/cooling
-#   - Monitor sensor status (0x0001) for disconnection events
-#   - Communication timeout (>90s) triggers automatic emergency stop
-#
-# IMPORTANT SAFETY CONFIGURATION:
-#   - Registers 0x0006/0x0007 (thresholds): Can have low > high in cooling mode
-#   - Registers 0x0008/0x0009 (alarms): Can have low > high in cooling mode
-#   - Always verify critical settings after modbus address or baudrate changes
-#
-# ========================================
 
 modbus:
   send_wait_time: 1s
@@ -597,12 +274,12 @@ modbus:
 
 modbus_controller:
   - id: modbus_device
-    address: ${modbus_slave_address}  # Default address of the Modbus slave device on the bus
+    address: ${modbus_slave_address}
     modbus_id: modbus1
     setup_priority: -10
     update_interval: ${modbus_update_interval}
     command_throttle: 200ms
-    
+
 sensor:
   - platform: modbus_controller
     modbus_controller_id: modbus_device
@@ -634,19 +311,12 @@ sensor:
       then:
         - lambda: |-
             uint32_t now = millis();
-            bool emergency_active = id(emergency_stop).state;  // Cache state to reduce Modbus reads
-            bool boot_ready = id(boot_complete);  // Cache to avoid repeated global access
+            bool emergency_active = id(emergency_stop).state;
+            bool boot_ready = id(boot_complete);
             id(last_temp_update_ms) = now;
             id(comms_fault_latched) = false;
 
-            // Rate of change detection (runaway heating protection)
-            // NOTE: Only checks for RISING temperature - this is intentional:
-            //   - Rising too fast = runaway heating (fire risk) → emergency stop
-            //   - Falling fast = heater turned off (normal) → no emergency
-            //   - Runaway cooling is caught by low_temp_alarm check below
             if (id(has_last_valid_temp) && id(last_temp_sample_ms) != 0) {
-              // Calculate actual elapsed time for accurate rate calculation
-              // Uses unsigned arithmetic which safely handles millis() wraparound
               uint32_t elapsed_ms = now - id(last_temp_sample_ms);
               float temp_delta = x - id(last_valid_temp);
               float time_delta_sec = elapsed_ms / 1000.0f;
@@ -654,11 +324,15 @@ sensor:
               if (time_delta_sec > 0.0f) {
                 float temp_rate = temp_delta / time_delta_sec;
 
-                if (boot_ready && id(over_temp_shutoff).state && temp_rate > ${max_temp_rise_rate}) {
+                if (boot_ready && id(over_temp_shutoff).state &&
+                    temp_rate > ${max_temp_rise_rate}) {
                   if (!emergency_active) {
-                    ESP_LOGE("safety",
-                      "EMERGENCY: Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
-                      temp_rate, "${temp_unit_label}", "${temp_unit_label}");
+                    ESP_LOGE(
+                        "safety",
+                        "EMERGENCY: Temperature rising too fast: %.2f%s/s (max: ${max_temp_rise_rate}%s/s)",
+                        temp_rate,
+                        "${temp_unit_label}",
+                        "${temp_unit_label}");
                     id(trigger_emergency_stop)->execute();
                   }
                 }
@@ -667,13 +341,10 @@ sensor:
             id(last_temp_sample_ms) = now;
             id(last_valid_temp) = x;
             id(has_last_valid_temp) = true;
-        # High temperature alarm - absolute safety limit
-        # Triggers regardless of heating/cooling mode
-        # Only check after boot complete and alarm sensor is initialized (not NaN)
         - if:
             condition:
               lambda: |-
-                bool boot_ready = id(boot_complete);  // Cache to avoid repeated global access
+                bool boot_ready = id(boot_complete);
                 return boot_ready &&
                        id(over_temp_shutoff).state &&
                        !isnan(id(high_temp_alarm).state) &&
@@ -681,25 +352,18 @@ sensor:
                        !id(emergency_stop).state;
             then:
               - lambda: |-
-                  ESP_LOGE("safety",
-                    "EMERGENCY: Temperature %.1f%s exceeds High Temperature Alarm: %.1f%s",
-                    id(current_temperature).state,
-                    "${temp_unit_label}",
-                    id(high_temp_alarm).state,
-                    "${temp_unit_label}"
-                  );
+                  ESP_LOGE(
+                      "safety",
+                      "EMERGENCY: Temperature %.1f%s exceeds High Temperature Alarm: %.1f%s",
+                      id(current_temperature).state,
+                      "${temp_unit_label}",
+                      id(high_temp_alarm).state,
+                      "${temp_unit_label}");
                   id(trigger_emergency_stop)->execute();
-        # Low temperature alarm - detects sensor failure or runaway cooling
-        # Only triggers when controller is ACTIVE (heating or cooling)
-        # When STOPPED, temp naturally falls and is not an emergency
-        # Only check after boot complete and alarm sensor is initialized (not NaN)
-        # NOTE: Checks both heating AND cooling modes:
-        #   - Heating mode + low temp = heater failure or sensor fault
-        #   - Cooling mode + low temp = runaway cooling or sensor fault
         - if:
             condition:
               lambda: |-
-                bool boot_ready = id(boot_complete);  // Cache to avoid repeated global access
+                bool boot_ready = id(boot_complete);
                 return boot_ready &&
                        id(over_temp_shutoff).state &&
                        !isnan(id(low_temp_alarm).state) &&
@@ -708,13 +372,13 @@ sensor:
                        !id(emergency_stop).state;
             then:
               - lambda: |-
-                  ESP_LOGE("safety",
-                    "EMERGENCY: Temperature %.1f%s below Low Temperature Alarm: %.1f%s (possible sensor failure)",
-                    id(current_temperature).state,
-                    "${temp_unit_label}",
-                    id(low_temp_alarm).state,
-                    "${temp_unit_label}"
-                  );
+                  ESP_LOGE(
+                      "safety",
+                      "EMERGENCY: Temperature %.1f%s below Low Temperature Alarm: %.1f%s (possible sensor failure)",
+                      id(current_temperature).state,
+                      "${temp_unit_label}",
+                      id(low_temp_alarm).state,
+                      "${temp_unit_label}");
                   id(trigger_emergency_stop)->execute();
         - script.execute: update_status_led
     id: current_temperature
@@ -733,32 +397,6 @@ sensor:
     web_server:
       sorting_group_id: sorting_group_diagnostic
 
-  - platform: pulse_counter
-    pin:
-      number: GPIO2
-      mode:
-        input: true
-        pullup: true
-    name: "Fan Speed"
-    id: fan_rpm
-    unit_of_measurement: "RPM"
-    accuracy_decimals: 0
-    update_interval: 5s
-    count_mode:
-      rising_edge: DISABLE
-      falling_edge: INCREMENT
-    internal_filter: 13us
-    filters:
-      # 2 pulses per revolution (most 3/4-wire fans)
-      # pulse_counter gives pulses/min, so RPM = pulses/min / 2
-      - multiply: 0.5
-    on_value:
-      then:
-        - script.execute: check_fan_failure
-    icon: "mdi:fan"
-    web_server:
-      sorting_group_id: sorting_group_sensors
-
 binary_sensor:
   - platform: modbus_controller
     modbus_controller_id: modbus_device
@@ -766,7 +404,7 @@ binary_sensor:
     address: 0x000C
     register_type: holding
     on_press:
-      then: 
+      then:
         - logger.log:
             format: "Warning temperature alarm triggered!"
             level: WARN
@@ -822,7 +460,7 @@ text_sensor:
   - platform: modbus_controller
     modbus_controller_id: modbus_device
     name: "Temp Sensor Status"
-    address: 0x0001 
+    address: 0x0001
     register_type: holding
     register_count: 1
     response_size: 2
@@ -837,8 +475,6 @@ text_sensor:
       }
     on_value:
       then:
-        # Sensor disconnection is critical - cannot safely operate without temperature data
-        # Force emergency stop immediately
         - lambda: |-
             if (x != "Disconnected" || id(emergency_stop).state) return;
             ESP_LOGE("safety", "EMERGENCY: Temperature sensor disconnected");
@@ -933,17 +569,6 @@ text_sensor:
         sorting_group_id: sorting_group_diagnostic
 
   - platform: template
-    name: "WIFI Protocol"
-    entity_category: diagnostic
-    id: wifi_protocol
-    icon: "mdi:wifi-cog"
-    lambda: |-
-      return get_negotiated_wifi_protocol();
-    update_interval: 300s
-    web_server:
-      sorting_group_id: sorting_group_diagnostic
- 
-  - platform: template
     name: "Software Version"
     entity_category: diagnostic
     id: software_version
@@ -971,17 +596,13 @@ text_sensor:
       if (id(emergency_stop_timestamp) == 0) {
         return std::string("Not Active");
       }
-      // Calculate elapsed time since first emergency condition
-      // Uses unsigned arithmetic - safely handles millis() wraparound at ~49.7 days
       unsigned long elapsed_sec = (millis() - id(emergency_stop_timestamp)) / 1000;
 
-      // Calculate time components
       unsigned long days = elapsed_sec / 86400;
       unsigned long hours = (elapsed_sec % 86400) / 3600;
       unsigned long minutes = (elapsed_sec % 3600) / 60;
       unsigned long seconds = elapsed_sec % 60;
 
-      // Build output string efficiently using to_string
       std::string result;
       if (days > 0) result += std::to_string(days) + "d ";
       if (hours > 0) result += std::to_string(hours) + "h ";
@@ -1006,13 +627,11 @@ text_sensor:
             const bool is_printing =
                 (x == "running" || x == "prepare" || x == "slicing");
             if (x == "finish" || x == "failed" || x == "offline") {
-              // Print ended - turn off chamber heater
               auto call = id(filament_temp_preset).make_call();
               call.set_option("Off");
               call.perform();
               ESP_LOGI("bambu", "Print ended, automatically turning off chamber heater");
             } else if (is_printing) {
-              // Print started - auto-select chamber temp based on current filament
               ESP_LOGI("bambu", "Print started, auto-selecting chamber temperature");
             }
         - script.execute: maybe_auto_select_filament_preset
@@ -1078,7 +697,7 @@ number:
     entity_category: config
     id: backlight_level
     icon: "mdi:lightbulb"
-    internal: ${hide_backlight_setting} # Hide if not supported by device
+    internal: ${hide_backlight_setting}
     web_server:
       sorting_group_id: sorting_group_settings
 
@@ -1152,35 +771,40 @@ select:
               ESP_LOGI("preset", "Emergency stop activated");
               return;
             }
-            
+
             if (x == "User-defined") {
               ESP_LOGI("preset", "User-defined mode selected");
               return;
             }
-            
-            // Look up preset temperatures
+
             auto it = id(filament_presets).find(x);
             if (it != id(filament_presets).end()) {
               float temp_start = it->second.first;
               float temp_stop = it->second.second;
-              
+
               auto call_start = id(temp_threshold_start).make_call();
               call_start.set_value(temp_start);
               call_start.perform();
-              
+
               auto call_stop = id(temp_threshold_stop).make_call();
               call_stop.set_value(temp_stop);
               call_stop.perform();
-              
+
               if (id(emergency_stop).state == 1 && !id(emergency_stop_fault)) {
                 id(emergency_stop_internal).turn_off();
                 ESP_LOGI("preset", "Emergency stop deactivated");
               } else if (id(emergency_stop).state == 1) {
-                ESP_LOGW("preset", "Emergency stop remains active because it was triggered by a fault condition");
+                ESP_LOGW(
+                    "preset",
+                    "Emergency stop remains active because it was triggered by a fault condition");
               }
-              
-              ESP_LOGI("preset", "%s filament selected setting heating temperature range (%.1f${temp_unit_label} - %.1f${temp_unit_label})",
-                       x.c_str(), temp_start, temp_stop);
+
+              ESP_LOGI(
+                  "preset",
+                  "%s filament selected setting heating temperature range (%.1f${temp_unit_label} - %.1f${temp_unit_label})",
+                  x.c_str(),
+                  temp_start,
+                  temp_stop);
             }
     entity_category: config
     id: filament_temp_preset
@@ -1188,7 +812,7 @@ select:
     web_server:
       sorting_group_id: sorting_group_settings
 
-switch: 
+switch:
   - platform: modbus_controller
     modbus_controller_id: modbus_device
     name: "Alarm Sound"
@@ -1208,7 +832,7 @@ switch:
     icon: "mdi:alarm-check"
     web_server:
       sorting_group_id: sorting_group_settings
- 
+
   - platform: modbus_controller
     modbus_controller_id: modbus_device
     name: "High Temp Alarm"
@@ -1257,8 +881,6 @@ switch:
     on_turn_on:
       - lambda: |-
           id(emergency_stop_manual_clear_pending) = false;
-          // Set timestamp only if not already set
-          // Preserves time of first emergency if multiple conditions trigger
           if (id(emergency_stop_timestamp) == 0) {
             id(emergency_stop_timestamp) = millis();
           }
@@ -1266,10 +888,7 @@ switch:
       - script.execute: update_status_led
     on_turn_off:
       - lambda: |-
-          // Clear timestamp whenever emergency stop is released.
           id(emergency_stop_timestamp) = 0;
-          // Only clear the fault latch after the controller actually leaves
-          // emergency stop and only if the user requested a manual clear.
           if (id(emergency_stop_manual_clear_pending)) {
             id(emergency_stop_fault) = false;
             id(emergency_stop_manual_clear_pending) = false;
@@ -1302,7 +921,7 @@ switch:
     use_write_multiple: false
     entity_category: config
     id: sleep_switch
-    internal: ${hide_sleep_switch} # Hide if not supported by device
+    internal: ${hide_sleep_switch}
     icon: "mdi:power-sleep"
     web_server:
       sorting_group_id: sorting_group_settings
@@ -1326,7 +945,6 @@ switch:
     web_server:
       sorting_group_id: sorting_group_system
 
-  # Raises logger level to DEBUG only while this switch is enabled.
   - platform: template
     name: "Modbus Debugging"
     optimistic: true
@@ -1354,13 +972,13 @@ switch:
     turn_on_action:
       - globals.set:
           id: restart_confirmed
-          value: 'true'
+          value: "true"
       - script.execute: restart_confirm_timeout
     turn_off_action:
       - script.stop: restart_confirm_timeout
       - globals.set:
           id: restart_confirmed
-          value: 'false'
+          value: "false"
     id: restart_confirmation
     icon: "mdi:shield-check-outline"
     web_server:
@@ -1373,7 +991,7 @@ button:
     on_press:
       - if:
           condition:
-            lambda: 'return id(restart_confirmed);'
+            lambda: "return id(restart_confirmed);"
           then:
             - logger.log:
                 format: "Restarting device..."
@@ -1394,32 +1012,19 @@ button:
     internal: true
 
 interval:
-  # Communication watchdog - monitors for stale temperature data
-  # Checks every 30 seconds if temperature updates are being received
-  # Triggers emergency stop if no updates for comms_timeout_ms (90s)
   - interval: ${watchdog_interval}
     then:
-      # Check Modbus temperature communication
       - if:
           condition:
             lambda: |-
-              // Skip if already latched to avoid duplicate log messages
               if (id(comms_fault_latched)) return false;
-              // Skip if no temperature readings received yet (initial state)
               if (id(last_temp_update_ms) == 0) return false;
-              // Check if time since last update exceeds timeout threshold
-              // Unsigned arithmetic handles millis() wraparound correctly
               return (millis() - id(last_temp_update_ms)) > ${comms_timeout_ms}UL;
           then:
             - lambda: |-
                 id(comms_fault_latched) = true;
                 ESP_LOGE("safety", "EMERGENCY: No temperature updates received for >${comms_timeout_ms}ms");
                 id(trigger_emergency_stop)->execute();
-
-  # Status LED fallback refresh - primary updates are event-driven
-  - interval: 60s
-    then:
-      - script.execute: update_status_led
 
 web_server:
   port: 80

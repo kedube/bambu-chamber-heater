@@ -1,372 +1,249 @@
 # Bambu Chamber Heater - ESPHome Controller
-ESPHome implementation to remotely control **Sinilink XY-SA/ST series temperature controllers** using the **Waveshare ESP32-C6-Zero wireless module**. Designed specifically to work with *Bambu Lab P1S/X1 Carbon 3D printers* and integration with Home Assistant or managed with the web interface. 
+ESPHome implementation to remotely control **Sinilink XY-SA/ST series temperature controllers** for *Bambu Lab P1S/X1 Carbon 3D printers*. The repository now supports both the **ESP8285-based XY-WFPOW** module and the **Waveshare ESP32-C6-Zero** from one shared codebase.
 
-This project allows you to intelligently manage your chamber heater by turning it on/off automatically, linking it with print jobs, and controlling it with automation scripts. Inspired by the [BambuSauna project](https://makerworld.com/en/models/2417482-bambusauna-for-sinilink-xy-sa-st-temp-controller).  
+This project allows you to automatically manage a chamber heater, link it to print jobs, and control it through Home Assistant or the built-in web interface. It was inspired by the [BambuSauna project](https://makerworld.com/en/models/2417482-bambusauna-for-sinilink-xy-sa-st-temp-controller).
 
 ![Alt screenshot](images/bambusauna-1.jpeg)
 ![Alt screenshot](images/sinilink_temperature_controller.jpeg)
 
+## Supported Devices
+
+| Device | ESPHome Entry File | Notes |
+| :--- | :--- | :--- |
+| ESP8285 / XY-WFPOW | `src/temp_controller_esp8285.yaml` | Original Sinilink Wi-Fi module, built-in status LED, no fan RPM monitoring |
+| ESP32-C6-Zero | `src/temp_controller_esp32.yaml` | External module retrofit, WS2812 status LED, fan RPM monitoring, Wi-Fi protocol sensor |
+| Manual selector | `src/temp_controller.yaml` | Main YAML with package toggles for device and temperature unit |
+
+## Repository Layout
+
+- `src/settings.yaml` contains the shared substitutions and default build settings.
+- `src/packages/controller_shared.yaml` contains the shared controller logic, Modbus entities, automations, and safety behavior.
+- `src/packages/device_esp8285.yaml` contains ESP8285-only framework, GPIO, and hardware configuration.
+- `src/packages/device_esp32_c6_zero.yaml` contains ESP32-C6-Zero-only framework, GPIO, fan monitoring, LED logic, and helper include usage.
+- `src/packages/celsius.yaml` and `src/packages/fahrenheit.yaml` contain unit-specific number ranges and preset math.
+- `src/temp_controller.yaml` is the main entrypoint if you want to switch device and unit by editing one file.
+
 ## Features
 
-### Control & Automation
-- **ESPHome Integration** - Seamless remote control and monitoring through Home Assistant
-- **Web Interface** - Standalone web server with customizable UI for direct device access
-- **Builtin Automation** - Temperature control based on print jobs and filament type
-- **Filament Presets** - Pre-configured temperature profiles for PLA, PETG, ABS, ASA, and Nylon, plus user-defined settings
+### Shared Features
+- ESPHome integration for Home Assistant
+- Standalone web interface
+- Automatic chamber temperature control based on print state and filament type
+- Filament presets plus user-defined mode
+- Emergency stop handling
+- Over-temperature protection
+- Runaway heating detection
+- Sensor fault detection
+- Modbus communication watchdog
+- End-of-job shutoff
+- Celsius and Fahrenheit builds
+- OTA firmware updates
 
-### Safety & Protection
-- **Emergency Stop** - Instant heater shutdown via manual override or automated triggers
-- **Over-Temperature Protection** - Automatic shutoff when temperature exceeds high alarm threshold
-- **Runaway Heating Detection** - Monitors temperature rise rate and triggers emergency stop on anomalies
-- **Sensor Fault Detection** - Automatic emergency stop on temperature sensor disconnection
-- **Communication Watchdog** - Auto-shutoff if Modbus communication is lost for >90 seconds
-- **End of Job** - Auto-shutoff when print is finished
-
-### Configuration
-- **Dual Unit Support** - Switch between Celsius and Fahrenheit temperature units
-- **Temperature Calibration** - Adjustable temperature offset for sensor accuracy
-- **OTA Firmware Updates** - Wireless updates without physical access to the device
+### ESP32-C6-Zero Extras
+- Fan RPM monitoring with emergency-stop interlock
+- WS2812 RGB status LED with state-based colors and effects
+- Wi-Fi protocol diagnostic sensor via [include/wifi_protocol_helper.h](include/wifi_protocol_helper.h)
 
 ## Requirements
-Make sure you have the following before proceeding:
 
 ### Software
-- ESPHome build environment installed locally (instructions below)
-- Home Assistant with [Bambu Lab HA integration](https://github.com/greghesp/ha-bambulab) installed
+- ESPHome installed locally
+- Home Assistant with the [Bambu Lab HA integration](https://github.com/greghesp/ha-bambulab)
 
-### Hardware
+### Common Hardware
 - Bambu P1S / X1 Carbon 3D Printer
-- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller (no need to get the SA30 since the SA10 can handles nearly 5 times the amperage for a 250W heater)
-- Waveshare ESP32-C6-Zero Wireless Module with 2 x 9-Pin Headers soldered
-- NOYITO AC 100V-264V to DC 24V 1A Power Supply Module (powers the 24V Fan only)
-- AC 120/240V PTC Heater 200-250W (no need to be more powerful than this)
-- 24V 4020 3-Wire Fan (Used: SUNON MF40202VX-1000U-G99 with 10.8CFM airflow)
+- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller
+- NOYITO AC 100V-264V to DC 24V 1A Power Supply Module
+- AC 120/240V PTC Heater 200-250W
 - (2) 3-Way WAGO Connectors
-- 16Ga Silicon Wiring (Used: red and black wiring) 
-- 1/4 Watt 10K Ohm Resistor (for 3.3V pull-up power for tach)
-- JST MX 1.25MM 4-Pin wired cable to connect ESP32 to Temperature Controller
-- Assorted 2.54MM Pitch Housing Connectors with crimp pins to terminate JST MX 4-Pin cable  
+- 16Ga silicone wiring
 - Heat set inserts: (15) M3x4x5 + (1) M2x2.5x3.2
-- Screws: 
-  - (7) M3x5MM or 6MM button screws for covers
-  - (2) M3x25MM hex head screws for lower aux fan screws
-  - (4) M3x25MM hex head screws for 24V Fan
-  - (4) M3x4MM button screws for NOYITO AC to DC Power Supply Module
-  - (2) M3x8MM hex head screws to connect housing to printer bottom
-  - (4) M4x6MM or 8MM self-tapping screws to hold PTC in housing without fan
-  - (2) M4x12MM button screws to hold the PTC heater to the front cover
-  - (2) M4 self-locking nuts to connect the PTC heater to the front cover
-  - (1) M2x3MM machine screw to hold the wireless module to the housing
-- (1) XT30 connector pair set (both ends) to allow the chamber heater to be removed
-- Heatshrink tubing (for XT30 connectors and ESP32 wiring harness)
-- Soldering equipment (depending on the installation method)
-- USB-to-TTL UART Programmer (Note: I highly recommend FTDI-based programmers)
+- XT30 connector pair
+- Soldering equipment
+
+### ESP8285 Hardware
+- Sinilink XY-WFPOW (ESP8285-based) wireless module
+- 24V 4020 fan
+- USB-to-TTL UART programmer set to 3.3V for the initial flash
+
+### ESP32-C6-Zero Hardware
+- Waveshare ESP32-C6-Zero with 2 x 9-pin headers soldered
+- 24V 4020 3-wire fan
+- 1/4W 10K resistor for the tach pull-up
+- JST MX 1.25mm 4-pin cable for the controller connection
+- Assorted 2.54mm pitch housings and crimp pins
+- USB-C cable for the initial flash
 
 ## References
 - [Sinilink XY-ST/SA Remote Thermostat Datasheet](https://myosuploads3.banggood.com/products/20240220/20240220213226STSA-EN.pdf)
 - [Sinilink XY-WT04 Modbus Communication Protocol](https://myosuploads3.banggood.com/products/20220717/20220717212911XY-WT04-EN.pdf)
+- [ESPhome-Sinilink-XY-WFPOW](https://github.com/creepystefan/ESPhome-Sinilink-XY-WFPOW)
+- [Tasmota XY-WFPOW Template](https://templates.blakadder.com/sinilink_XY-WFPOW.html)
 
 ## Modbus Address Map
-Register addresses for XY-SA/ST temperature controller. All registers are 16-bit holding registers unless otherwise noted. Temperature values use signed words (S_WORD) that require a 0.1 multiplier when displaying.
 
-| ADDRESS | TYPE   | NAME                    | RANGE/VALUES        | Read/Write | DESCRIPTION
-| :---|:---:|:---|:---|:---:|:---
-| 0x0000  | U_WORD | Controller Status       | 0=Stopped, 1=Active | RW | Main relay/controller state
-| 0x0001  | U_WORD | Temp Sensor Status      | 0=Connected, 1=Disc | RO | Temperature sensor connection status
-| 0x0002  | U_WORD | Delay Time Remaining    | 0-999 seconds       | RO | Countdown timer for delayed start
-| 0x0003  | S_WORD | Current Temperature     | -400 to 1100 (*0.1) | RO | Current measured temperature
-| 0x0004  | U_WORD | Temperature Unit        | 0=Celsius, 1=Fahrenheit | RW | Display and control temperature unit
-| 0x0005  | U_WORD | Controller Mode         | 0=Heating, 1=Cooling| RO | Operating mode (heating vs cooling)
-| 0x0006  | S_WORD | Low Temp Threshold      | -400 to 850 (*0.1)  | RW | Temperature to start heating/cooling
-| 0x0007  | S_WORD | High Temp Threshold     | -400 to 850 (*0.1)  | RW | Temperature to stop heating/cooling
-| 0x0008  | S_WORD | High Temp Alarm         | -400 to 1100 (*0.1) | RW | High temperature alarm threshold
-| 0x0009  | S_WORD | Low Temp Alarm          | -400 to 1100 (*0.1) | RW | Low temperature alarm threshold
-| 0x000A  | U_WORD | Delay Start Time        | 0-999 seconds       | RW | Delay start duration setting
-| 0x000B  | S_WORD | Temperature Offset      | -100 to 100 (*0.1)  | RW | Temperature calibration offset
-| 0x000C  | BOOL   | Alarm Active            | 0=No, 1=Yes         | RO | Temperature alarm status
-| 0x000D  | BOOL   | Alarm Sound             | 0=Off, 1=On         | RW | Enable/disable alarm beeper
-| 0x000E  | BOOL   | High Temp Alarm Enable  | 0=Off, 1=On         | RW | Enable high temperature alarm
-| 0x000F  | BOOL   | Low Temp Alarm Enable   | 0=Off, 1=On         | RW | Enable low temperature alarm
-| 0x0010  | BOOL   | Delay Start Enable      | 0=Off, 1=On         | RW | Enable delayed start feature
-| 0x0011  | BOOL   | Emergency Stop          | 0=Off, 1=On         | RW | Emergency stop/disable controller
-| 0x0012  | U_WORD | Modbus Address          | 1-247               | RW | Modbus slave address (requires reboot)
-| 0x0013  | U_WORD | Modbus Baudrate         | 0-6 \<See baudrate map\>  | RW | Serial communication speed
-| 0x0014  | BOOL   | Sleep Mode              | 0=Off, 1=On         | RW | Display sleep/power saving mode
-| 0x0015  | U_WORD | Backlight Level         | 0-7                 | RW | Display backlight brightness (0=off)
+| ADDRESS | TYPE | NAME | RANGE/VALUES | Read/Write | DESCRIPTION |
+| :--- | :---: | :--- | :--- | :---: | :--- |
+| 0x0000 | U_WORD | Controller Status | 0=Stopped, 1=Active | RW | Main relay/controller state |
+| 0x0001 | U_WORD | Temp Sensor Status | 0=Connected, 1=Disc | RO | Temperature sensor connection status |
+| 0x0002 | U_WORD | Delay Time Remaining | 0-999 seconds | RO | Countdown timer for delayed start |
+| 0x0003 | S_WORD | Current Temperature | -400 to 1100 (*0.1) | RO | Current measured temperature |
+| 0x0004 | U_WORD | Temperature Unit | 0=Celsius, 1=Fahrenheit | RW | Display and control temperature unit |
+| 0x0005 | U_WORD | Controller Mode | 0=Heating, 1=Cooling | RO | Operating mode |
+| 0x0006 | S_WORD | Low Temp Threshold | -400 to 850 (*0.1) | RW | Temperature to start heating/cooling |
+| 0x0007 | S_WORD | High Temp Threshold | -400 to 850 (*0.1) | RW | Temperature to stop heating/cooling |
+| 0x0008 | S_WORD | High Temp Alarm | -400 to 1100 (*0.1) | RW | High temperature alarm threshold |
+| 0x0009 | S_WORD | Low Temp Alarm | -400 to 1100 (*0.1) | RW | Low temperature alarm threshold |
+| 0x000A | U_WORD | Delay Start Time | 0-999 seconds | RW | Delay start duration setting |
+| 0x000B | S_WORD | Temperature Offset | -100 to 100 (*0.1) | RW | Temperature calibration offset |
+| 0x000C | BOOL | Alarm Active | 0=No, 1=Yes | RO | Temperature alarm status |
+| 0x000D | BOOL | Alarm Sound | 0=Off, 1=On | RW | Enable/disable alarm beeper |
+| 0x000E | BOOL | High Temp Alarm Enable | 0=Off, 1=On | RW | Enable high temperature alarm |
+| 0x000F | BOOL | Low Temp Alarm Enable | 0=Off, 1=On | RW | Enable low temperature alarm |
+| 0x0010 | BOOL | Delay Start Enable | 0=Off, 1=On | RW | Enable delayed start feature |
+| 0x0011 | BOOL | Emergency Stop | 0=Off, 1=On | RW | Emergency stop/disable controller |
+| 0x0012 | U_WORD | Modbus Address | 1-247 | RW | Modbus slave address |
+| 0x0013 | U_WORD | Modbus Baudrate | 0-6 | RW | Serial communication speed |
+| 0x0014 | BOOL | Sleep Mode | 0=Off, 1=On | RW | Display sleep/power saving mode |
+| 0x0015 | U_WORD | Backlight Level | 0-7 | RW | Display backlight brightness |
 
-Baudrate Map (0x0013): 0=9600, 1=14400, 2=19200, 3=38400, 4=56000, 5=57600, 6=115200
+Baudrate map for `0x0013`: `0=9600`, `1=14400`, `2=19200`, `3=38400`, `4=56000`, `5=57600`, `6=115200`.
 
-Temperature Value Encoding:
-   - Stored as signed 16-bit integers representing temperature in tenths of degrees
-   - Actual temperature = register_value * 0.1
-   - Example: register value 235 = 23.5°C
+## Wiring and Hardware Notes
 
-Safety Notes:
-   - Always enable high temp alarm (0x000E) for safety
-   - Set high temp alarm (0x0008) above normal operating range
-   - Emergency stop (0x0011) immediately disables heating/cooling
+### ESP8285 / XY-WFPOW
+Use the original Sinilink XY-WFPOW Wi-Fi module. The basic wiring diagram is shown below.
 
-## Wiring Diagram
-Here is a basic wiring diagram for AC-powered Sinilink XY-SA Series Temperature Controllers. The Sinilink XY-ST Series Temperature Controllers are DC-powered and require an external 24V power supply and entirely different wiring schematic. 
-
-![Alt Wiring Diagram](images/bambusauna_wiring_diagram-esp32.png)
-
-![Alt ESP32 Pinout](images/esp32-c6-zero-pinout.png)
-
-![Alt screenshot](images/esp32-wiring-harness.jpeg)
-
-![Alt screenshot](images/bambusauna-4.jpeg)
-
-![Alt screenshot](images/bambusauna-esp32.jpeg)
-
+![Alt Wiring Diagram](images/bambusauna_wiring_diagram-esp8285.png)
+![Alt screenshot](images/bambusauna-3.jpeg)
 ![Alt screenshot](images/bambusauna-2.jpeg)
 
+For initial flashing, connect the USB-to-TTL programmer at **3.3V**:
 
-Disclaimer: The author assumes no liability for any injury, damage, or loss resulting from wiring errors, improper installation, or misuse of this project. Electrical work can be hazardous—if you are unsure, consult a qualified professional before proceeding.
+```text
+GND -> GND
+TXD -> RXD
+RXD -> TXD
+IO0 -> GND
+RST -> not connected
+3V3 -> VCC
+```
 
-## Setup & Installation
+Adapter board photos:
+
+![Alt Programming Adapter Board 1](images/adapter_board-1.jpeg)
+![Alt Programming Adapter Board 2](images/adapter_board-2.jpeg)
+
+### ESP32-C6-Zero
+The ESP32-C6-Zero retrofit uses a separate module and adds RPM monitoring and RGB LED status indication.
+
+![Alt Wiring Diagram](images/bambusauna_wiring_diagram-esp32.png)
+![Alt ESP32 Pinout](images/esp32-c6-zero-pinout.png)
+![Alt screenshot](images/esp32-wiring-harness.jpeg)
+![Alt screenshot](images/bambusauna-4.jpeg)
+![Alt screenshot](images/bambusauna-esp32.jpeg)
+![Alt screenshot](images/bambusauna-2.jpeg)
+
+The onboard WS2812 LED on GPIO8 is used for status:
+
+| State | Color | Effect |
+| :--- | :--- | :--- |
+| Emergency stop | Red | Solid |
+| Wi-Fi disconnected | Blue | Fast pulse |
+| Over-temperature warning | Red | Strobe |
+| Heating active | Orange | Slow pulse |
+| Normal idle | Green | Dim solid |
+
+## Setup
 
 ### 1. Install ESPHome
-Follow the instructions at the official ESPHome website: [ESPHome.io website](https://esphome.io/guides/installing_esphome/).
+Follow the official instructions at [ESPHome.io](https://esphome.io/guides/installing_esphome/).
 
-If you're using MacOS, the easiest way to install is via [Homebrew](https://brew.sh/) by running this command in a MacOS terminal window:
-```
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-Now install ESPHome:
-```
+On macOS, one common setup is:
+
+```bash
 brew install esphome
 ```
 
-### 2. Clone Repository
-```
+### 2. Clone the Repository
+
+```bash
 git clone https://github.com/kedube/bambu-chamber-heater
 cd bambu-chamber-heater
 ```
 
-### 3. Configure Secrets & Settings
-Copy the default secrets file and update it with your credentials & Wi-Fi:
-```
-cp secrets-example.yaml secrets.yaml
+### 3. Configure Secrets
+Copy and edit the secrets file:
+
+```bash
+cp src/secrets-example.yaml src/secrets.yaml
 ```
 
-Configurable settings:
-```
-# Update the following secrets with your own values.
-location_name: "Office"
-wifi_ssid: ""
-wifi_password: ""
-ap_wifi_ssid: "chamber-heater"
-ap_wifi_password: ""
-web_server_username: "admin"
-web_server_password: ""
-ota_password: ""
-# Generate a random 32-byte encryption key for the API and paste it here or visit https://esphome.io/components/api/ to generate one. 
-# This is required if you want to use integrate with Home Assistant.
-encryption_key: ""
-# Bambu printer ID only (without "binary_sensor." and without "_online"),
-# e.g. "x1c_00x00b123401012" which becomes "binary_sensor.x1c_00x00b123401012_online"
-bambu_printer_id: ""
-# Static IP configuration (uncomment and set values if needed)
-#static_ip: ""
-#gateway: ""
-#subnet: ""
-#dns1: ""
-#dns2: ""
-```
+Important values include:
+- `wifi_ssid`
+- `wifi_password`
+- `ap_wifi_ssid`
+- `ap_wifi_password`
+- `web_server_username`
+- `web_server_password`
+- `ota_password`
+- `encryption_key`
+- `bambu_printer_id`
 
-Generate a valid 32-byte encryption key (see: [ESPHome.io](https://esphome.io/components/api/)), and insert it under `encryption_key`.
+Shared substitutions such as `device_name`, `friendly_name`, software version, filament preset defaults, and Modbus timing are now defined in `src/settings.yaml`.
 
-In temperature_controller.yaml, there are also a number of settings you can configure if you like in the substitutions: section:
-```
-substitutions:
-  device_name: "chamber-heater"
-  friendly_name: "Chamber Heater Controller"
-  device_description: "ESP32-based Modbus interface for Sinilink XY-SA/ST temperature controllers"
-  device_area: "Office"
-  bambu_printer_entity_id: !secret bambu_printer_id
-  sw_version: "1.6.0"
-  pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pctg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  abs_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  asa_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pc_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pet_temp: "50" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pa_temp: "60" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pa6_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pa12_temp: "60" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pa612_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  ppa_temp: "70" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pps_temp: "80" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pp_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  pe_temp: "75" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-  paht_temp: "55" # Degrees Celsius - adjust as needed for your specific filament and printer setup
-```
+### 4. Choose Device and Temperature Unit
 
-### 4. Choose Temperature Unit
-By default, the code uses Celsius. To use Fahrenheit, uncomment the appropriate yaml package in 'temperature_controller.yaml':
-```
+If you want one editable selector file, use `src/temp_controller.yaml` and switch the package includes:
+
+```yaml
 packages:
-  select_units: !include 
-    # Select the appropriate temperature unit file to include based on your preference. 
-    # Both files define the same entities, but with different units and value ranges.
-    #file: celsius.yaml
-    file: fahrenheit.yaml
+  settings: !include settings.yaml
+  controller_shared: !include packages/controller_shared.yaml
+  select_units: !include
+    file: packages/celsius.yaml
+    #file: packages/fahrenheit.yaml
+  select_device: !include
+    file: packages/device_esp8285.yaml
+    #file: packages/device_esp32_c6_zero.yaml
 ```
 
-### 5. Compile the yaml files
-Compile the ESPHome code:
-```
-esphome run temperature_controller.yaml
-```
+If you prefer a fixed compile target, use one of these:
+- `src/temp_controller_esp8285.yaml`
+- `src/temp_controller_esp32.yaml`
 
-### 6. Flash the ESP32-C6-Zero module with ESPHome
+### 5. Build
 
-Once ESPHome successfully compiles the YAML configuration, it will prompt you to flash the **ESP32** module if the module is connected via USB-C to your computer.
+Examples:
 
-```
-Linking .pioenvs/bambu-chamber-heater/firmware.elf
-RAM:   [====      ]  44.4% (used 36380 bytes from 81920 bytes)
-Flash: [=====     ]  54.9% (used 562413 bytes from 1023984 bytes)
-Building .pioenvs/bambu-chamber-heater/firmware.bin
-esp8266_copy_factory_bin([".pioenvs/bambu-chamber-heater/firmware.bin"], [".pioenvs/bambu-chamber-heater/firmware.elf"])
-esp8266_copy_ota_bin([".pioenvs/bambu-chamber-heater/firmware.bin"], [".pioenvs/bambu-chamber-heater/firmware.elf"])
-========================================================================== [SUCCESS] Took 30.71 seconds ==========================================================================
-INFO Successfully compiled program.
-Found multiple options for uploading, please choose one:
-  [1] /dev/cu.usbserial-BG031LIB (FT232R USB UART)
-  [2] Over The Air (chamber-heater.local)
-(number): 1
-esptool v5.1.0
-Connected to ESP8266 on /dev/cu.usbserial-BG031LIB:
-Chip type:          ESP8285H16
-Features:           Wi-Fi, 160MHz, Embedded Flash
-Crystal frequency:  26MHz
-MAC:                14:08:08:6c:e4:19
-
-Stub flasher running.
-Changing baud rate to 460800...
-Changed.
-
-Configuring flash size...
-Auto-detected flash size: 2MB
-Flash will be erased from 0x00000000 to 0x0008afff...
-Flash parameters set to 0x0330.
-Compressed 566560 bytes to 396530...
-Wrote 566560 bytes (396530 compressed) at 0x00000000 in 9.6 seconds (473.6 kbit/s).
-Hash of data verified.
-
-Hard resetting via RTS pin...
-INFO Successfully uploaded program.
-INFO UART logging is disabled (baud_rate=0). Not starting UART logs.
+```bash
+esphome run src/temp_controller.yaml
+esphome run src/temp_controller_esp8285.yaml
+esphome run src/temp_controller_esp32.yaml
 ```
 
-A USB-C connection is required **only for the initial flash**. After that, all future updates can be deployed using **ESPHome Over-The-Air (OTA)** once the configuration compiles successfully.
+### 6. First Flash
 
-```
-Linking .pioenvs/chamber-heater/firmware.elf
-                            Memory Type Usage Summary                             
-┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
-┃ Memory Type/Section ┃ Used [bytes] ┃ Used [%] ┃ Remain [bytes] ┃ Total [bytes] ┃
-┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
-│ Flash Code          │       991712 │          │                │               │
-│    .text            │       843088 │          │                │               │
-│    .rodata          │       148368 │          │                │               │
-│    .appdesc         │          256 │          │                │               │
-│ DIRAM               │       130448 │    28.85 │         321664 │        452112 │
-│    .text            │        92744 │    20.51 │                │               │
-│    .bss             │        24304 │     5.38 │                │               │
-│    .data            │        13400 │     2.96 │                │               │
-└─────────────────────┴──────────────┴──────────┴────────────────┴───────────────┘
-Total image size: 1097864 bytes (.bin may be padded larger)
-Note: The reported total sizes may be smaller than those in the technical reference manual due to reserved memory and application configuration. The total flash size available for the application is not included by default, as it cannot be reliably determined due to the presence of other data like the bootloader, partition table, and application partition size.
-RAM:   [=         ]  11.5% (used 37704 bytes from 327680 bytes)
-Flash: [===       ]  27.9% (used 1097600 bytes from 3932160 bytes)
-Building .pioenvs/chamber-heater/firmware.bin
-Creating ESP32C6 image...
-Successfully created ESP32C6 image.
-merge_factory_bin([".pioenvs/chamber-heater/firmware.bin"], [".pioenvs/chamber-heater/firmware.elf"])
-Info: bootloader.bin not found - skipping
-Info: partition-table.bin not found - skipping
-Info: ota_data_initial.bin not found - skipping
-Info: chamber-heater.bin not found - skipping
-Using FLASH_EXTRA_IMAGES from PlatformIO environment
-Merging binaries into /Users/katherine/Downloads/bambu-chamber-heater.esp32/src/.esphome/build/chamber-heater/.pioenvs/chamber-heater/firmware.factory.bin
-Merging binaries with esptool
-SHA digest in image updated.
-Wrote 0x11c0f0 bytes to file '/Users/katherine/Downloads/bambu-chamber-heater.esp32/src/.esphome/build/chamber-heater/.pioenvs/chamber-heater/firmware.factory.bin', ready to flash to offset 0x0.
-Successfully created /Users/katherine/Downloads/bambu-chamber-heater.esp32/src/.esphome/build/chamber-heater/.pioenvs/chamber-heater/firmware.factory.bin
-esp32_copy_ota_bin([".pioenvs/chamber-heater/firmware.bin"], [".pioenvs/chamber-heater/firmware.elf"])
-Copied firmware to /Users/katherine/Downloads/bambu-chamber-heater.esp32/src/.esphome/build/chamber-heater/.pioenvs/chamber-heater/firmware.ota.bin
-==================================================================== [SUCCESS] Took 14.98 seconds ====================================================================
-INFO Build Info: config_hash=0xe8b8e332 build_time_str=2026-03-18 20:29:16 -0400
-INFO Successfully compiled program.
-INFO Connecting to 192.168.1.27 port 3232...
-INFO Connected to 192.168.1.27
-INFO Uploading /Users/katherine/Downloads/bambu-chamber-heater.esp32/src/.esphome/build/chamber-heater/.pioenvs/chamber-heater/firmware.bin (1097968 bytes)
-Uploading: [============================================================] 100% Done...
+For the ESP8285, use the USB-to-TTL adapter and the XY-WFPOW flashing pins.
 
-INFO Upload took 3.03 seconds, waiting for result...
-INFO OTA successful
-INFO Successfully uploaded program.
-INFO Starting log output from 192.168.1.27 using esphome API
-INFO Successfully resolved chamber-heater @ 192.168.1.27 in 0.000s
-INFO Successfully connected to chamber-heater @ 192.168.1.27 in 3.039s
-INFO Successful handshake with chamber-heater @ 192.168.1.27 in 0.051s
-[20:29:40.991][I][app:215]: ESPHome version 2026.2.4 compiled on 2026-03-18 12:56:27 -0400
-[20:29:40.996][I][app:222]: ESP32 Chip: ESP32-C6 rev0.2, 1 core(s)
-```
+For the ESP32-C6-Zero, connect the board by USB-C and flash it directly.
 
-### 6. Connect to the web server running on the ESP32 module
-To control the heater, adjust the **Low (start)** and **High (stop)** temperature thresholds.
-You can also use the **Emergency Stop** switch as a manual override to immediately enable or disable the heater.
+After the initial flash, both device types can be updated over ESPHome OTA.
 
-The onboard **WS2812 RGB LED** (connected to GPIO8) provides real-time visual status feedback:
+### 7. Home Assistant
+Once online, the device should be discovered by the ESPHome integration in Home Assistant. Use the same `encryption_key` configured in `src/secrets.yaml`.
 
-| LED State | Color | Effect | Meaning |
-|-----------|-------|--------|---------|
-| Emergency Stop | Red | Solid | System emergency stopped |
-| WiFi Disconnected | Blue | Fast Pulse | Network connection lost |
-| Over Temperature | Red | Strobe | Temperature >60°C warning |
-| Heating Active | Orange | Slow Pulse | Heater is running |
-| Normal/Idle | Green | Solid (dim) | Everything OK |
-
-The LED updates automatically every 2 seconds and immediately responds to WiFi and emergency stop state changes, providing at-a-glance status without needing to check the web interface or Home Assistant.
+![Alt Home Assistant Encription Key Screenshot](images/home_assistant_1.png)
+![Alt Home Assistant Device Entities Screenshot](images/home_assistant_2.png)
 
 ![Alt Web UI Screenshot](images/screenshot.png)
 
-### 7. Configure ESPHome integration with Home Assistant
-Once the **ESP32** module is installed and online, Home Assistant should automatically discover it through the **ESPHome** integration.
-ion.
-
-Enter the same **encryption key** you defined in the `secrets.yaml` configuration file.
-
-![Alt Home Assistant Encription Key Screenshot](images/home_assistant_1.png)
-
-You can now remotely monitor and manage the temperature controller directly from Home Assistant.
-![Alt Home Assistant Device Entities Screenshot](images/home_assistant_2.png)
-
-By default, when a print starts, the controller checks the selected filament type. If it matches one of the configured presets, the system automatically sets the appropriate chamber temperature and enables the heater.
-
-When the print completes or fails, the chamber heater is automatically turned off. No need to manually create automation scripts in Home Assistant. 
-
-### Status Indication
-- **LED Status Indicator** - WS2812 RGB LED provides instant visual feedback of system state
-  - 🔴 **Solid Red** - Emergency stop active
-  - 🔵 **Pulsing Blue** - WiFi disconnected
-  - 🔴 **Flashing Red** - Over temperature warning
-  - 🟠 **Pulsing Orange** - Heater actively running
-  - 🟢 **Dim Green** - Normal operation (idle/connected)
-
 ## Known Issues
-- The Sinilink Modbus addresses for **Sleep Switch** (`0x0014`) and **Backlight Grade** (`0x0015`) do not appear to have any effect. This may be due to limitations in the XY-SA10/SA30 controllers I have been using for development, or to a misinterpretation of Modbus address information. I've commented this out for the time being.
-- If you mix filament types on the same build plate (for example, using PETG supports with PLA), the chamber heater will fluctuate between temperatures based on the filament type you're printing with. 
+- The Sinilink Modbus addresses for the sleep switch (`0x0014`) and backlight level (`0x0015`) may not have any effect on some XY-SA10/SA30 controllers.
+- Mixed-material prints can still cause the chamber target to change as the active filament changes.
+
+## Safety
+The author assumes no liability for injury, damage, or loss resulting from wiring errors, improper installation, or misuse of this project. Electrical work can be hazardous. If you are unsure, consult a qualified professional.
 
 ## Contributing
-Contributions are welcome!
-- Bug fixes
-- Documentation improvements
-- New features or hardware support
-Please open an issue or pull request and include testing details when possible.
+Contributions are welcome for bug fixes, documentation improvements, and new hardware support. Please include testing details when possible.
