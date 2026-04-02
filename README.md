@@ -3,25 +3,28 @@ ESPHome implementation to remotely control **Sinilink XY-SA/ST series temperatur
 
 This project allows you to automatically manage a chamber heater, link it to print jobs, and control it through Home Assistant or the built-in web interface. It was inspired by the [BambuSauna project](https://makerworld.com/en/models/2417482-bambusauna-for-sinilink-xy-sa-st-temp-controller).
 
-![Alt screenshot](images/bambusauna-1.jpeg)
-![Alt screenshot](images/sinilink_temperature_controller.jpeg)
+![Alt screenshot](docs/images/bambusauna-1.jpeg)
+![Alt screenshot](docs/images/sinilink_temperature_controller.jpeg)
 
 ## Supported Devices
 
 | Device | ESPHome Entry File | Notes |
 | :--- | :--- | :--- |
-| ESP8285 / XY-WFPOW | `src/temp_controller_esp8285.yaml` | Original Sinilink Wi-Fi module, built-in status LED, no fan RPM monitoring |
-| ESP32-C6-Zero | `src/temp_controller_esp32.yaml` | External module retrofit, WS2812 status LED, fan RPM monitoring, Wi-Fi protocol sensor |
-| Manual selector | `src/temp_controller.yaml` | Main YAML with package toggles for device and temperature unit |
+| ESP8285 / XY-WFPOW | `esphome/temp_controller_esp8285.yaml` | Original Sinilink Wi-Fi module, built-in status LED, no fan RPM monitoring |
+| ESP32-C6-Zero | `esphome/temp_controller_esp32.yaml` | External module retrofit, WS2812 status LED, fan RPM monitoring, Wi-Fi protocol sensor |
+| Manual selector | `esphome/temp_controller.yaml` | Main YAML with package toggles for device and temperature unit |
 
 ## Repository Layout
 
-- `src/settings.yaml` contains the shared substitutions, default build settings, and additional shared configuration options you may want to customize.
-- `src/packages/controller_shared.yaml` contains the shared controller logic, Modbus entities, automations, and safety behavior.
-- `src/packages/device_esp8285.yaml` contains ESP8285-only framework, GPIO, and hardware configuration.
-- `src/packages/device_esp32_c6_zero.yaml` contains ESP32-C6-Zero-only framework, GPIO, fan monitoring, LED logic, and helper include usage.
-- `src/packages/celsius.yaml` and `src/packages/fahrenheit.yaml` contain unit-specific number ranges and preset math.
-- `src/temp_controller.yaml` is the main entrypoint if you want to switch device and unit by editing one file.
+- `esphome/settings.yaml` contains the shared substitutions, default build settings, and additional shared configuration options you may want to customize.
+- `esphome/packages/controller_shared.yaml` contains the shared controller logic, Modbus entities, automations, and safety behavior.
+- `esphome/packages/device_esp8285.yaml` contains ESP8285-only framework, GPIO, and hardware configuration.
+- `esphome/packages/device_esp32_c6_zero.yaml` contains ESP32-C6-Zero-only framework, GPIO, fan monitoring, LED logic, and helper include usage.
+- `esphome/packages/celsius.yaml` and `esphome/packages/fahrenheit.yaml` contain unit-specific number ranges and preset math.
+- `esphome/temp_controller.yaml` is the main entrypoint if you want to switch device and unit by editing one file.
+- `assets/web/` contains the custom web UI CSS and JavaScript assets used by ESPHome's web server.
+- `docs/images/` contains README screenshots, wiring diagrams, and source artwork.
+- `hardware/3d-models/` contains printable enclosure and adapter `.3mf` files.
 
 ## Features
 
@@ -40,9 +43,9 @@ This project allows you to automatically manage a chamber heater, link it to pri
 - OTA firmware updates
 
 ### ESP32-C6-Zero Extras
-- Fan RPM monitoring with emergency-stop interlock
+- RPM monitoring for 3-wire fans with emergency-stop interlock
 - WS2812 RGB status LED with state-based colors and effects
-- Wi-Fi protocol diagnostic sensor via [include/wifi_protocol_helper.h](include/wifi_protocol_helper.h)
+- Wi-Fi 6 support with protocol diagnostic sensor via [include/wifi_protocol_helper.h](include/wifi_protocol_helper.h)
 
 ## Requirements
 
@@ -52,19 +55,19 @@ This project allows you to automatically manage a chamber heater, link it to pri
 
 ### Common Hardware
 - Bambu P1S / X1 Carbon 3D Printer
-- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller
+- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller  _ _(XY-SA10-W is recommended)_ _
 - NOYITO AC 100V-264V to DC 24V 1A Power Supply Module
 - AC 120/240V PTC Heater 200-250W
 - (2) 3-Way WAGO Connectors
-- 16Ga silicone wiring
+- 16-18Ga silicone wiring
 - Heat set inserts: (15) M3x4x5 + (1) M2x2.5x3.2
 - XT30 connector pair
 - Soldering equipment
 
 ### ESP8285 Hardware
 - Sinilink XY-WFPOW (ESP8285-based) wireless module
-- 24V 4020 fan
-- USB-to-TTL UART programmer set to 3.3V for the initial flash
+- 24V 4020 2 or 3-wire fan
+- USB-to-TTL UART programmer set to 3.3V _ _(only needed for the initial flash)_ _
 
 ### ESP32-C6-Zero Hardware
 - Waveshare ESP32-C6-Zero with 2 x 9-pin headers soldered
@@ -72,7 +75,7 @@ This project allows you to automatically manage a chamber heater, link it to pri
 - 1/4W 10K resistor for the tach pull-up
 - JST MX 1.25mm 4-pin cable for the controller connection
 - Assorted 2.54mm pitch housings and crimp pins
-- USB-C cable for the initial flash
+- USB-C-to-USB-C cable for the initial flash
 
 ## References
 - [Sinilink XY-ST/SA Remote Thermostat Datasheet](https://myosuploads3.banggood.com/products/20240220/20240220213226STSA-EN.pdf)
@@ -114,34 +117,18 @@ Baudrate map for `0x0013`: `0=9600`, `1=14400`, `2=19200`, `3=38400`, `4=56000`,
 ### ESP8285 / XY-WFPOW
 Use the original Sinilink XY-WFPOW Wi-Fi module. The basic wiring diagram is shown below.
 
-![Alt Wiring Diagram](images/bambusauna_wiring_diagram-esp8285.png)
-![Alt screenshot](images/bambusauna-3.jpeg)
-![Alt screenshot](images/bambusauna-2.jpeg)
-
-For initial flashing, connect the USB-to-TTL programmer at **3.3V**:
-
-```text
-GND -> GND
-TXD -> RXD
-RXD -> TXD
-IO0 -> GND
-RST -> not connected
-3V3 -> VCC
-```
-
-Adapter board photos:
-
-![Alt Programming Adapter Board 1](images/adapter_board-1.jpeg)
-![Alt Programming Adapter Board 2](images/adapter_board-2.jpeg)
+![Alt Wiring Diagram](docs/images/bambusauna_wiring_diagram-esp8285.png)
+![Alt screenshot](docs/images/bambusauna-3.jpeg)
+![Alt screenshot](docs/images/bambusauna-2.jpeg)
 
 ### ESP32-C6-Zero
-The ESP32-C6-Zero retrofit uses a separate module and adds RPM monitoring and RGB LED status indication.
+The ESP32-C6-Zero retrofit uses a separate module and adds fan RPM monitoring and RGB LED status indication.
 
-![Alt Wiring Diagram](images/bambusauna_wiring_diagram-esp32.png)
-![Alt ESP32 Pinout](images/esp32-c6-zero-pinout.png)
-![Alt screenshot](images/esp32-wiring-harness.jpeg)
-![Alt screenshot](images/bambusauna-4.jpeg)
-![Alt screenshot](images/bambusauna-esp32.jpeg)
+![Alt Wiring Diagram](docs/images/bambusauna_wiring_diagram-esp32.png)
+![Alt ESP32 Pinout](docs/images/esp32-c6-zero-pinout.png)
+![Alt screenshot](docs/images/esp32-wiring-harness.jpeg)
+![Alt screenshot](docs/images/bambusauna-4.jpeg)
+![Alt screenshot](docs/images/bambusauna-esp32.jpeg)
 
 The onboard WS2812 LED on GPIO8 is used for status:
 
@@ -156,10 +143,14 @@ The onboard WS2812 LED on GPIO8 is used for status:
 ## Setup
 
 ### 1. Install ESPHome
-Follow the official instructions at [ESPHome.io](https://esphome.io/guides/installing_esphome/).
+Follow the official directions on the [ESPHome website](https://esphome.io/guides/installing_esphome/).
 
-On macOS, one common setup is:
+If you're using MacOS, the easiest way to install is via [Homebrew](https://brew.sh/) by running this command in a MacOS terminal window:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
 
+Now install ESPHome:
 ```bash
 brew install esphome
 ```
@@ -175,7 +166,7 @@ cd bambu-chamber-heater
 Copy and edit the secrets file:
 
 ```bash
-cp src/secrets-example.yaml src/secrets.yaml
+cp esphome/secrets-example.yaml esphome/secrets.yaml
 ```
 
 Important values include:
@@ -189,12 +180,12 @@ Important values include:
 - `encryption_key`
 - `bambu_printer_id`
 
-Shared substitutions such as `device_name`, `friendly_name`, software version, filament preset defaults, and Modbus timing are now defined in `src/settings.yaml`.
+Shared substitutions such as `device_name`, `friendly_name`, software version, filament preset defaults, and Modbus timing are now defined in `esphome/settings.yaml`.
 Use that file for additional shared configuration changes before editing the controller or device packages directly.
 
 ### 4. Choose Device and Temperature Unit
 
-If you want one editable selector file, use `src/temp_controller.yaml` and switch the package includes:
+If you want one editable selector file, use `esphome/temp_controller.yaml` and switch the package includes:
 
 ```yaml
 packages:
@@ -209,34 +200,63 @@ packages:
 ```
 
 If you prefer a fixed compile target, use one of these:
-- `src/temp_controller_esp8285.yaml`
-- `src/temp_controller_esp32.yaml`
+- `esphome/temp_controller_esp8285.yaml`
+- `esphome/temp_controller_esp32.yaml`
 
-### 5. Build
-
-Examples:
+### 5. Validate The Configuration
 
 ```bash
-esphome run src/temp_controller.yaml
-esphome run src/temp_controller_esp8285.yaml
-esphome run src/temp_controller_esp32.yaml
+esphome config esphome/temp_controller.yaml
 ```
 
-### 6. First Flash
+### 6. Build
 
-For the ESP8285, use the USB-to-TTL adapter and the XY-WFPOW flashing pins.
+Example:
 
-For the ESP32-C6-Zero, connect the board by USB-C and flash it directly.
+```bash
+esphome run esphome/temp_controller.yaml
+```
 
-After the initial flash, both device types can be updated over ESPHome OTA.
+### 7. First Flash
 
-### 7. Home Assistant
-Once online, the device should be discovered by the ESPHome integration in Home Assistant. Use the same `encryption_key` configured in `src/secrets.yaml`.
+### ESP8285 / XY-WFPOW
+For the ESP8285, use the USB-to-TTL adapter programmer at **3.3V** and the XY-WFPOW flashing pins:
 
-![Alt Home Assistant Encription Key Screenshot](images/home_assistant_1.png)
-![Alt Home Assistant Device Entities Screenshot](images/home_assistant_2.png)
+```text
+GND -> GND
+TXD -> RXD
+RXD -> TXD
+IO0 -> GND
+RST -> not connected
+3V3 -> VCC
+```
 
-![Alt Web UI Screenshot](images/screenshot.png)
+Adapter board photos:
+![Alt Programming Adapter Board 1](images/adapter_board-1.jpeg)
+![Alt Programming Adapter Board 2](images/adapter_board-2.jpeg)
+
+### ESP32-C6-Zero
+For the ESP32-C6-Zero, you must connect the board via USB-C and flash it directly. It will prompt you after a successful build for where to upload the code. 
+
+```text
+INFO Build Info: config_hash=0x694d2e36 build_time_str=2026-04-01 14:02:17 -0400
+INFO Successfully compiled program.
+Found multiple options for uploading, please choose one:
+  [1] /dev/cu.usbserial-8320 (USB Serial)
+  [2] Over The Air (esp32-remote.local)
+(number):
+```
+
+### Subsequent Flashes
+After the initial flash, both device types can be updated over the air (OTA) using ESPHome.
+
+### 8. Home Assistant
+Once online, the device should be discovered by the ESPHome integration in Home Assistant. Use the same `encryption_key` configured in `esphome/secrets.yaml`.
+
+![Alt Home Assistant Encryption Key Screenshot](docs/images/home_assistant_1.png)
+![Alt Home Assistant Device Entities Screenshot](docs/images/home_assistant_2.png)
+
+![Alt Web UI Screenshot](docs/images/screenshot.png)
 
 ## Known Issues
 - The Sinilink Modbus addresses for the sleep switch (`0x0014`) and backlight level (`0x0015`) may not have any effect on some XY-SA10/SA30 controllers.
