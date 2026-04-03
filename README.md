@@ -295,7 +295,7 @@ Once online, the device should be discovered by the ESPHome integration in Home 
 
 ## Known Issues
 - The Sinilink Modbus addresses for the sleep switch (`0x0014`) and backlight level (`0x0015`) may not have any effect on some XY-SA10/SA30 controllers.
-- Mixed-material prints can still cause the chamber target to change as the active filament changes.
+- Mixed-material prints will cause the chamber target temperature to fluctuate as the active filament changes.
 
 ## Safety
 The author assumes no liability for injury, damage, or loss resulting from wiring errors, improper installation, or misuse of this project. Electrical work can be hazardous. If you are unsure, consult a qualified professional.
