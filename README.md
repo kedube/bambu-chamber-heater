@@ -294,7 +294,7 @@ Once online, the device should be discovered by the ESPHome integration in Home 
 ![Alt Home Assistant Device Entities Screenshot](docs/images/home_assistant_2.png)
 
 ## Known Issues
-- The Sinilink Modbus addresses for the sleep switch (`0x0014`) and backlight level (`0x0015`) may not have any effect on some XY-SA10/SA30 controllers.
+- The Sinilink Modbus addresses for the sleep switch (`0x0014`) and backlight level (`0x0015`) does not seem to have any effect on the backlight settings for XY-SA10/SA30 controllers.
 - Mixed-material prints will cause the chamber target temperature to fluctuate as the active filament changes.
 
 ## Safety
