@@ -201,7 +201,7 @@ sensor:
       number: GPIO2
       mode:
         input: true
-        pullup: true
+        pullup: false
     name: "Fan Speed"
     id: fan_rpm
     unit_of_measurement: "RPM"
