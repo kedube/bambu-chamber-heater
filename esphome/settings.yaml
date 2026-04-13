@@ -4,7 +4,7 @@ substitutions:
   device_description: "ESPHome Modbus interface for Sinilink XY-SA/ST temperature controllers"
   device_area: "Office"
   bambu_printer_entity_id: !secret bambu_printer_id
-  sw_version: "1.7.0"
+  sw_version: "1.7.1"
   pla_temp: "22" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   tpu_temp: "25" # Degrees Celsius - adjust as needed for your specific filament and printer setup
   petg_temp: "35" # Degrees Celsius - adjust as needed for your specific filament and printer setup
