@@ -84,6 +84,10 @@ globals:
     type: bool
     restore_value: no
     initial_value: "false"
+  - id: home_assistant_api_client_count
+    type: int
+    restore_value: no
+    initial_value: "0"
   - id: emergency_stop_fault
     type: bool
     restore_value: no
@@ -149,11 +153,16 @@ script:
             lambda: |-
               bool boot_ready = id(boot_complete);
               bool api_ready = id(api_connection);
-              bool printer_state_ready = id(bambu_printer_online).has_state();
+              bool printer_state_ready = id(printer_status_raw).has_state();
+              if (!boot_ready || !api_ready || !printer_state_ready) {
+                return false;
+              }
+
+              const std::string &printer_state = id(printer_status_raw).state;
               return boot_ready &&
                      api_ready &&
                      printer_state_ready &&
-                     !id(bambu_printer_online).state;
+                     printer_state == "off";
           then:
             - lambda: |-
                 ESP_LOGE("safety", "EMERGENCY: Bambu printer is offline");
@@ -214,6 +223,7 @@ esphome:
       - lambda: |-
           id(boot_complete) = true;
           ESP_LOGI("boot", "Boot complete - emergency stop checks now active");
+      - script.execute: update_status_led
   platformio_options:
     build_flags:
       - -Os
@@ -225,18 +235,96 @@ api:
   on_client_connected:
     then:
       - lambda: |-
-          id(api_connection) = true;
-      - script.execute: check_bambu_printer_online
+          std::string client_name = client_info;
+          std::transform(
+              client_name.begin(),
+              client_name.end(),
+              client_name.begin(),
+              [](unsigned char c) { return std::tolower(c); });
+
+          const bool is_home_assistant =
+              client_name.find("home assistant") != std::string::npos;
+          const bool is_esphome_logs =
+              client_name.find("esphome logs") != std::string::npos;
+
+          if (is_home_assistant) {
+            id(home_assistant_api_client_count)++;
+            id(api_connection) = true;
+            ESP_LOGI(
+                "api",
+                "Home Assistant API client connected: %s (%s)",
+                client_info.c_str(),
+                client_address.c_str());
+            id(check_bambu_printer_online)->execute();
+          } else if (is_esphome_logs) {
+            ESP_LOGI(
+                "api",
+                "ESPHome log client connected: %s (%s)",
+                client_info.c_str(),
+                client_address.c_str());
+          } else {
+            ESP_LOGI(
+                "api",
+                "Non-Home-Assistant API client connected: %s (%s)",
+                client_info.c_str(),
+                client_address.c_str());
+          }
   on_client_disconnected:
     then:
       - if:
           condition:
-            lambda: "return id(api_connection);"
+            lambda: |-
+              std::string client_name = client_info;
+              std::transform(
+                  client_name.begin(),
+                  client_name.end(),
+                  client_name.begin(),
+                  [](unsigned char c) { return std::tolower(c); });
+              return client_name.find("home assistant") != std::string::npos;
           then:
             - lambda: |-
-                id(api_connection) = false;
-                ESP_LOGE("safety", "EMERGENCY: Home Assistant API connection lost");
-                id(trigger_emergency_stop)->execute();
+                if (id(home_assistant_api_client_count) > 0) {
+                  id(home_assistant_api_client_count)--;
+                }
+
+                if (id(home_assistant_api_client_count) == 0 && id(api_connection)) {
+                  id(api_connection) = false;
+                  ESP_LOGE(
+                      "safety",
+                      "EMERGENCY: Home Assistant API connection lost (%s)",
+                      client_address.c_str());
+                  id(trigger_emergency_stop)->execute();
+                }
+                ESP_LOGI(
+                    "api",
+                    "Home Assistant API client disconnected: %s (%s)",
+                    client_info.c_str(),
+                    client_address.c_str());
+          else:
+            - lambda: |-
+                std::string client_name = client_info;
+                std::transform(
+                    client_name.begin(),
+                    client_name.end(),
+                    client_name.begin(),
+                    [](unsigned char c) { return std::tolower(c); });
+
+                const bool is_esphome_logs =
+                    client_name.find("esphome logs") != std::string::npos;
+
+                if (is_esphome_logs) {
+                  ESP_LOGI(
+                      "api",
+                      "ESPHome log client disconnected: %s (%s)",
+                      client_info.c_str(),
+                      client_address.c_str());
+                } else {
+                  ESP_LOGI(
+                      "api",
+                      "Non-Home-Assistant API client disconnected: %s (%s)",
+                      client_info.c_str(),
+                      client_address.c_str());
+                }
 
 logger:
   level: DEBUG
@@ -413,17 +501,39 @@ binary_sensor:
     web_server:
       sorting_group_id: sorting_group_sensors
 
+text_sensor:
   - platform: homeassistant
-    name: "Bambu Printer Online"
-    entity_category: diagnostic
+    id: printer_status_raw
     entity_id: binary_sensor.${bambu_printer_entity_id}_online
-    id: bambu_printer_online
     internal: true
-    on_state:
+    on_value:
       then:
         - script.execute: check_bambu_printer_online
+        - component.update: printer_status
 
-text_sensor:
+  - platform: template
+    name: "Printer Status"
+    entity_category: diagnostic
+    id: printer_status
+    internal: false
+    icon: "mdi:printer-3d"
+    lambda: |-
+      if (!id(printer_status_raw).has_state()) {
+        return std::string("Unknown");
+      }
+
+      const std::string &state = id(printer_status_raw).state;
+      if (state == "on") {
+        return std::string("Online");
+      }
+      if (state == "off" || state == "unavailable") {
+        return std::string("Offline");
+      }
+      return state;
+    update_interval: never
+    web_server:
+      sorting_group_id: sorting_group_diagnostic
+
   - platform: modbus_controller
     modbus_controller_id: modbus_device
     name: "Controller Status"
@@ -634,6 +744,7 @@ text_sensor:
             } else if (is_printing) {
               ESP_LOGI("bambu", "Print started, auto-selecting chamber temperature");
             }
+        - script.execute: check_fan_failure
         - script.execute: maybe_auto_select_filament_preset
 
   - platform: homeassistant

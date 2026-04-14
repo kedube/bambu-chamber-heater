@@ -40,6 +40,16 @@ script:
             return;
           }
 
+          bool printer_status_ready = id(bambu_printer_status).has_state();
+          bool printer_is_printing = printer_status_ready &&
+              (id(bambu_printer_status).state == "running" ||
+               id(bambu_printer_status).state == "prepare" ||
+               id(bambu_printer_status).state == "slicing");
+          if (!printer_is_printing) {
+            id(fan_low_rpm_since_ms) = 0;
+            return;
+          }
+
           const float rpm = id(fan_rpm).state;
           if (isnan(rpm) || id(controller_status).state != "Active") {
             id(fan_low_rpm_since_ms) = 0;
@@ -71,6 +81,10 @@ script:
     mode: restart
     then:
       - lambda: |-
+          if (!id(boot_complete)) {
+            return;
+          }
+
           if (id(emergency_stop).state) {
             auto call = id(status_led).turn_on();
             call.set_rgb(1.0, 0.0, 0.0);
