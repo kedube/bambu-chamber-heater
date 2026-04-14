@@ -203,6 +203,10 @@ script:
     mode: restart
     then:
       - lambda: |-
+          if (!id(bambu_printer_status).has_state() || !id(bambu_filament_type).has_state()) {
+            return;
+          }
+
           const auto &status = id(bambu_printer_status).state;
           const bool is_printing =
               (status == "running" || status == "prepare" || status == "slicing");
@@ -218,11 +222,13 @@ esphome:
   on_boot:
     priority: 200
     then:
+      - switch.turn_on: emergency_stop_internal
       - script.execute: write_temp_unit
       - delay: ${emergency_check_delay}
       - lambda: |-
           id(boot_complete) = true;
           ESP_LOGI("boot", "Boot complete - emergency stop checks now active");
+      - script.execute: maybe_auto_select_filament_preset
       - script.execute: update_status_led
   platformio_options:
     build_flags:
@@ -256,6 +262,7 @@ api:
                 client_info.c_str(),
                 client_address.c_str());
             id(check_bambu_printer_online)->execute();
+            id(maybe_auto_select_filament_preset)->execute();
           } else if (is_esphome_logs) {
             ESP_LOGI(
                 "api",
@@ -518,16 +525,13 @@ text_sensor:
     internal: false
     icon: "mdi:printer-3d"
     lambda: |-
-      if (!id(printer_status_raw).has_state()) {
+      if (!id(bambu_printer_status).has_state()) {
         return std::string("Unknown");
       }
 
-      const std::string &state = id(printer_status_raw).state;
-      if (state == "on") {
-        return std::string("Online");
-      }
-      if (state == "off" || state == "unavailable") {
-        return std::string("Offline");
+      std::string state = id(bambu_printer_status).state;
+      if (!state.empty()) {
+        state[0] = std::toupper(static_cast<unsigned char>(state[0]));
       }
       return state;
     update_interval: never
@@ -730,17 +734,22 @@ text_sensor:
     entity_id: sensor.${bambu_printer_entity_id}_print_status
     entity_category: diagnostic
     id: bambu_printer_status
+    internal: true
     icon: "mdi:printer-3d"
     on_value:
       then:
+        - component.update: printer_status
         - lambda: |-
             const bool is_printing =
                 (x == "running" || x == "prepare" || x == "slicing");
-            if (x == "finish" || x == "failed" || x == "offline") {
+            if (x == "finish" || x == "failed" || x == "offline" || x == "idle") {
               auto call = id(filament_temp_preset).make_call();
               call.set_option("Off");
               call.perform();
-              ESP_LOGI("bambu", "Print ended, automatically turning off chamber heater");
+              ESP_LOGI(
+                  "bambu",
+                  "Printer is not actively printing (%s), automatically turning off chamber heater",
+                  x.c_str());
             } else if (is_printing) {
               ESP_LOGI("bambu", "Print started, auto-selecting chamber temperature");
             }
@@ -892,6 +901,12 @@ select:
             if (it != id(filament_presets).end()) {
               float temp_start = it->second.first;
               float temp_stop = it->second.second;
+              bool boot_ready = id(boot_complete);
+              bool printer_status_ready = id(bambu_printer_status).has_state();
+              bool printer_is_printing = printer_status_ready &&
+                  (id(bambu_printer_status).state == "running" ||
+                   id(bambu_printer_status).state == "prepare" ||
+                   id(bambu_printer_status).state == "slicing");
 
               auto call_start = id(temp_threshold_start).make_call();
               call_start.set_value(temp_start);
@@ -901,7 +916,20 @@ select:
               call_stop.set_value(temp_stop);
               call_stop.perform();
 
-              if (id(emergency_stop).state == 1 && !id(emergency_stop_fault)) {
+              if ((!boot_ready || !printer_is_printing) &&
+                  id(emergency_stop).state == 1 &&
+                  !id(emergency_stop_fault)) {
+                ESP_LOGI(
+                    "preset",
+                    "Preserving emergency stop because printer is not actively printing for preset %s",
+                    x.c_str());
+              } else if ((!boot_ready || !printer_is_printing) && !id(emergency_stop_fault)) {
+                id(emergency_stop_internal).turn_on();
+                ESP_LOGI(
+                    "preset",
+                    "Emergency stop activated because printer is not actively printing for preset %s",
+                    x.c_str());
+              } else if (id(emergency_stop).state == 1 && !id(emergency_stop_fault)) {
                 id(emergency_stop_internal).turn_off();
                 ESP_LOGI("preset", "Emergency stop deactivated");
               } else if (id(emergency_stop).state == 1) {
