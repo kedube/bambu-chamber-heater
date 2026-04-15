@@ -187,25 +187,6 @@ wifi:
   on_disconnect:
     - script.execute: update_status_led
 
-uart:
-  - id: uart_bus
-    tx_pin: ${uart_tx_pin}
-    rx_pin: ${uart_rx_pin}
-    baud_rate: ${baud_rate}
-    data_bits: 8
-    parity: NONE
-    stop_bits: 1
-    debug:
-      direction: BOTH
-      dummy_receiver: false
-      after:
-        delimiter: "\n"
-      sequence:
-        - lambda: |-
-            if (id(modbus_debugging)) {
-              UARTDebug::log_hex(direction, bytes, ' ');
-            }
-
 sensor:
   - platform: pulse_counter
     pin:
