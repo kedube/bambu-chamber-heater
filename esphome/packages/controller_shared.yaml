@@ -159,10 +159,7 @@ script:
               }
 
               const std::string &printer_state = id(printer_status_raw).state;
-              return boot_ready &&
-                     api_ready &&
-                     printer_state_ready &&
-                     printer_state == "off";
+              return printer_state == "off";
           then:
             - lambda: |-
                 ESP_LOGE("safety", "EMERGENCY: Bambu printer is offline");
@@ -184,6 +181,15 @@ script:
           auto type_it = id(filament_type_map).find(filament_upper);
 
           if (type_it != id(filament_type_map).end()) {
+            if (std::string(id(filament_temp_preset).current_option()) == type_it->second) {
+              ESP_LOGD(
+                  "bambu",
+                  "Chamber temperature preset already set to %s (%s filament)",
+                  type_it->second.c_str(),
+                  filament_raw.c_str());
+              return;
+            }
+
             auto call = id(filament_temp_preset).make_call();
             call.set_option(type_it->second);
             call.perform();
@@ -207,10 +213,7 @@ script:
             return;
           }
 
-          const auto &status = id(bambu_printer_status).state;
-          const bool is_printing =
-              (status == "running" || status == "prepare" || status == "slicing");
-          if (is_printing) {
+          if (id(printer_is_actively_printing).state) {
             id(auto_select_filament_preset)->execute();
           }
 
@@ -278,60 +281,54 @@ api:
           }
   on_client_disconnected:
     then:
-      - if:
-          condition:
-            lambda: |-
-              std::string client_name = client_info;
-              std::transform(
-                  client_name.begin(),
-                  client_name.end(),
-                  client_name.begin(),
-                  [](unsigned char c) { return std::tolower(c); });
-              return client_name.find("home assistant") != std::string::npos;
-          then:
-            - lambda: |-
-                if (id(home_assistant_api_client_count) > 0) {
-                  id(home_assistant_api_client_count)--;
-                }
+      - lambda: |-
+          std::string client_name = client_info;
+          std::transform(
+              client_name.begin(),
+              client_name.end(),
+              client_name.begin(),
+              [](unsigned char c) { return std::tolower(c); });
 
-                if (id(home_assistant_api_client_count) == 0 && id(api_connection)) {
-                  id(api_connection) = false;
-                  ESP_LOGE(
-                      "safety",
-                      "EMERGENCY: Home Assistant API connection lost (%s)",
-                      client_address.c_str());
-                  id(trigger_emergency_stop)->execute();
-                }
-                ESP_LOGI(
-                    "api",
-                    "Home Assistant API client disconnected: %s (%s)",
-                    client_info.c_str(),
-                    client_address.c_str());
-          else:
-            - lambda: |-
-                std::string client_name = client_info;
-                std::transform(
-                    client_name.begin(),
-                    client_name.end(),
-                    client_name.begin(),
-                    [](unsigned char c) { return std::tolower(c); });
+          const bool is_home_assistant =
+              client_name.find("home assistant") != std::string::npos;
+          const bool is_esphome_logs =
+              client_name.find("esphome logs") != std::string::npos;
 
-                const bool is_esphome_logs =
-                    client_name.find("esphome logs") != std::string::npos;
+          if (is_home_assistant) {
+            if (id(home_assistant_api_client_count) > 0) {
+              id(home_assistant_api_client_count)--;
+            }
 
-                if (is_esphome_logs) {
-                  ESP_LOGI(
-                      "api",
-                      "ESPHome log client disconnected: %s (%s)",
-                      client_info.c_str(),
-                      client_address.c_str());
-                } else {
-                  ESP_LOGI(
-                      "api",
-                      "Non-Home-Assistant API client disconnected: %s (%s)",
-                      client_info.c_str(),
-                      client_address.c_str());
-                }
+            if (id(home_assistant_api_client_count) == 0 && id(api_connection)) {
+              id(api_connection) = false;
+              ESP_LOGE(
+                  "safety",
+                  "EMERGENCY: Home Assistant API connection lost (%s)",
+                  client_address.c_str());
+              id(trigger_emergency_stop)->execute();
+            }
+            ESP_LOGI(
+                "api",
+                "Home Assistant API client disconnected: %s (%s)",
+                client_info.c_str(),
+                client_address.c_str());
+            return;
+          }
+
+          if (is_esphome_logs) {
+            ESP_LOGI(
+                "api",
+                "ESPHome log client disconnected: %s (%s)",
+                client_info.c_str(),
+                client_address.c_str());
+            return;
+          }
+
+          ESP_LOGI(
+              "api",
+              "Non-Home-Assistant API client disconnected: %s (%s)",
+              client_info.c_str(),
+              client_address.c_str());
 
 logger:
   level: DEBUG
@@ -507,6 +504,18 @@ binary_sensor:
     icon: "mdi:alarm-bell"
     web_server:
       sorting_group_id: sorting_group_sensors
+
+  - platform: template
+    name: "Printer Is Actively Printing"
+    id: printer_is_actively_printing
+    internal: true
+    lambda: |-
+      if (!id(bambu_printer_status).has_state()) {
+        return false;
+      }
+
+      const std::string &status = id(bambu_printer_status).state;
+      return status == "running" || status == "prepare" || status == "slicing";
 
 text_sensor:
   - platform: homeassistant
@@ -740,17 +749,17 @@ text_sensor:
       then:
         - component.update: printer_status
         - lambda: |-
-            const bool is_printing =
-                (x == "running" || x == "prepare" || x == "slicing");
             if (x == "finish" || x == "failed" || x == "offline" || x == "idle") {
-              auto call = id(filament_temp_preset).make_call();
-              call.set_option("Off");
-              call.perform();
-              ESP_LOGI(
-                  "bambu",
-                  "Printer is not actively printing (%s), automatically turning off chamber heater",
-                  x.c_str());
-            } else if (is_printing) {
+              if (std::string(id(filament_temp_preset).current_option()) != "Off") {
+                auto call = id(filament_temp_preset).make_call();
+                call.set_option("Off");
+                call.perform();
+                ESP_LOGI(
+                    "bambu",
+                    "Printer is not actively printing (%s), automatically turning off chamber heater",
+                    x.c_str());
+              }
+            } else if (id(printer_is_actively_printing).state) {
               ESP_LOGI("bambu", "Print started, auto-selecting chamber temperature");
             }
         - script.execute: check_fan_failure
@@ -902,32 +911,31 @@ select:
               float temp_start = it->second.first;
               float temp_stop = it->second.second;
               bool boot_ready = id(boot_complete);
-              bool printer_status_ready = id(bambu_printer_status).has_state();
-              bool printer_is_printing = printer_status_ready &&
-                  (id(bambu_printer_status).state == "running" ||
-                   id(bambu_printer_status).state == "prepare" ||
-                   id(bambu_printer_status).state == "slicing");
 
-              auto call_start = id(temp_threshold_start).make_call();
-              call_start.set_value(temp_start);
-              call_start.perform();
+              if (isnan(id(temp_threshold_start).state) ||
+                  fabsf(id(temp_threshold_start).state - temp_start) > 0.05f) {
+                auto call_start = id(temp_threshold_start).make_call();
+                call_start.set_value(temp_start);
+                call_start.perform();
+              }
 
-              auto call_stop = id(temp_threshold_stop).make_call();
-              call_stop.set_value(temp_stop);
-              call_stop.perform();
+              if (isnan(id(temp_threshold_stop).state) ||
+                  fabsf(id(temp_threshold_stop).state - temp_stop) > 0.05f) {
+                auto call_stop = id(temp_threshold_stop).make_call();
+                call_stop.set_value(temp_stop);
+                call_stop.perform();
+              }
 
-              if ((!boot_ready || !printer_is_printing) &&
-                  id(emergency_stop).state == 1 &&
-                  !id(emergency_stop_fault)) {
+              if (!boot_ready && id(emergency_stop).state == 1 && !id(emergency_stop_fault)) {
                 ESP_LOGI(
                     "preset",
-                    "Preserving emergency stop because printer is not actively printing for preset %s",
+                    "Preserving emergency stop during boot for preset %s",
                     x.c_str());
-              } else if ((!boot_ready || !printer_is_printing) && !id(emergency_stop_fault)) {
+              } else if (!boot_ready && !id(emergency_stop_fault)) {
                 id(emergency_stop_internal).turn_on();
                 ESP_LOGI(
                     "preset",
-                    "Emergency stop activated because printer is not actively printing for preset %s",
+                    "Emergency stop activated during boot for preset %s",
                     x.c_str());
               } else if (id(emergency_stop).state == 1 && !id(emergency_stop_fault)) {
                 id(emergency_stop_internal).turn_off();

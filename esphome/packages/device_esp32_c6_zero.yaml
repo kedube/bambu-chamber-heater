@@ -40,12 +40,7 @@ script:
             return;
           }
 
-          bool printer_status_ready = id(bambu_printer_status).has_state();
-          bool printer_is_printing = printer_status_ready &&
-              (id(bambu_printer_status).state == "running" ||
-               id(bambu_printer_status).state == "prepare" ||
-               id(bambu_printer_status).state == "slicing");
-          if (!printer_is_printing) {
+          if (!id(printer_is_actively_printing).state) {
             id(fan_low_rpm_since_ms) = 0;
             return;
           }
@@ -85,45 +80,29 @@ script:
             return;
           }
 
+          auto call = id(status_led).turn_on();
+
           if (id(emergency_stop).state) {
-            auto call = id(status_led).turn_on();
             call.set_rgb(1.0, 0.0, 0.0);
             call.set_brightness(1.0);
             call.set_effect("None");
-            call.perform();
-            return;
-          }
-
-          if (!wifi::global_wifi_component->is_connected()) {
-            auto call = id(status_led).turn_on();
+          } else if (!wifi::global_wifi_component->is_connected()) {
             call.set_rgb(0.0, 0.0, 1.0);
             call.set_brightness(0.75);
             call.set_effect("Fast Pulse");
-            call.perform();
-            return;
-          }
-
-          auto temp = id(current_temperature).state;
-          if (!isnan(temp) && temp > ${overtemp_led_warning_threshold}) {
-            auto call = id(status_led).turn_on();
+          } else if (!isnan(id(current_temperature).state) &&
+                     id(current_temperature).state > ${overtemp_led_warning_threshold}) {
             call.set_effect("Error Strobe");
-            call.perform();
-            return;
-          }
-
-          if (id(controller_status).state == "Active") {
-            auto call = id(status_led).turn_on();
+          } else if (id(controller_status).state == "Active") {
             call.set_rgb(1.0, 0.5, 0.0);
             call.set_brightness(0.75);
             call.set_effect("Slow Pulse");
-            call.perform();
-            return;
+          } else {
+            call.set_rgb(0.0, 1.0, 0.0);
+            call.set_brightness(0.3);
+            call.set_effect("None");
           }
 
-          auto call = id(status_led).turn_on();
-          call.set_rgb(0.0, 1.0, 0.0);
-          call.set_brightness(0.3);
-          call.set_effect("None");
           call.perform();
 
 esp32:
