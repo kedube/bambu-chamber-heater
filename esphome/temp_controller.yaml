@@ -31,4 +31,4 @@ packages:
     #file: packages/fahrenheit.yaml
   select_device: !include
     file: packages/device_esp8285.yaml
-    #file: packages/device_esp32_c6_zero.yaml
+    #file: packages/device_esp32.yaml

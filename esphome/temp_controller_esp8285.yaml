@@ -21,6 +21,11 @@
 # ESP8285 convenience entrypoint for the unified chamber heater configuration.
 #
 
+substitutions:
+  uart_tx_pin: "GPIO1"
+  uart_rx_pin: "GPIO3"
+  status_led_pin: "GPIO2"
+
 packages:
   settings: !include settings.yaml
   controller_shared: !include packages/controller_shared.yaml

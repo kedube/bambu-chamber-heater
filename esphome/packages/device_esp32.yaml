@@ -150,7 +150,7 @@ light:
     id: status_led
     name: Status LED
     pin:
-      number: GPIO8
+      number: ${status_led_pin}
       ignore_strapping_warning: true
     rgb_order: RGB
     num_leds: 1
@@ -189,8 +189,8 @@ wifi:
 
 uart:
   - id: uart_bus
-    tx_pin: GPIO0
-    rx_pin: GPIO1
+    tx_pin: ${uart_tx_pin}
+    rx_pin: ${uart_rx_pin}
     baud_rate: ${baud_rate}
     data_bits: 8
     parity: NONE
@@ -209,7 +209,7 @@ uart:
 sensor:
   - platform: pulse_counter
     pin:
-      number: GPIO2
+      number: ${fan_rpm_pin}
       mode:
         input: true
         pullup: false

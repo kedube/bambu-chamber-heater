@@ -21,10 +21,16 @@
 # ESP32-C6-Zero convenience entrypoint for the unified chamber heater configuration.
 #
 
+substitutions:
+  uart_tx_pin: "GPIO0"
+  uart_rx_pin: "GPIO1"
+  status_led_pin: "GPIO8"
+  fan_rpm_pin: "GPIO2"
+
 packages:
   settings: !include settings.yaml
   controller_shared: !include packages/controller_shared.yaml
   select_units: !include
     file: packages/celsius.yaml
     #file: packages/fahrenheit.yaml
-  select_device: !include packages/device_esp32_c6_zero.yaml
+  select_device: !include packages/device_esp32.yaml

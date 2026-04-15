@@ -19,7 +19,7 @@ This project allows you to automatically manage a chamber heater, link it to pri
 - `esphome/settings.yaml` contains the shared substitutions, default build settings, and additional shared configuration options you may want to customize.
 - `esphome/packages/controller_shared.yaml` contains the shared controller logic, Modbus entities, automations, and safety behavior.
 - `esphome/packages/device_esp8285.yaml` contains ESP8285-only framework, GPIO, and hardware configuration.
-- `esphome/packages/device_esp32_c6_zero.yaml` contains ESP32-C6-Zero-only framework, GPIO, fan monitoring, LED logic, and helper include usage.
+- `esphome/packages/device_esp32.yaml` contains ESP32-C6-Zero-only framework, GPIO, fan monitoring, LED logic, and helper include usage.
 - `esphome/packages/celsius.yaml` and `esphome/packages/fahrenheit.yaml` contain unit-specific number ranges and preset math.
 - `esphome/temp_controller.yaml` is the main entrypoint if you want to switch device and unit by editing one file.
 - `assets/web/` contains the custom web UI CSS and JavaScript assets used by ESPHome's web server.
@@ -211,7 +211,7 @@ packages:
     #file: packages/fahrenheit.yaml
   select_device: !include
     file: packages/device_esp8285.yaml
-    #file: packages/device_esp32_c6_zero.yaml
+    #file: packages/device_esp32.yaml
 ```
 
 If you prefer a fixed compile target, use one of these:
