@@ -28,6 +28,10 @@ globals:
     type: uint32_t
     restore_value: no
     initial_value: "0"
+  - id: status_led_mode
+    type: int
+    restore_value: no
+    initial_value: "-1"
 
 script:
   - id: check_fan_failure
@@ -80,29 +84,49 @@ script:
             return;
           }
 
+          StatusLedMode next_led_mode = compute_status_led_mode(
+              id(emergency_stop).state,
+              wifi::global_wifi_component->is_connected(),
+              id(current_temperature).state,
+              ${overtemp_led_warning_threshold},
+              id(controller_status).state);
+          float red = 0.0f;
+          float green = 1.0f;
+          float blue = 0.0f;
+          float brightness = 0.3f;
+          const char *effect = "None";
+
           auto call = id(status_led).turn_on();
 
-          if (id(emergency_stop).state) {
-            call.set_rgb(1.0, 0.0, 0.0);
-            call.set_brightness(1.0);
-            call.set_effect("None");
-          } else if (!wifi::global_wifi_component->is_connected()) {
-            call.set_rgb(0.0, 0.0, 1.0);
-            call.set_brightness(0.75);
-            call.set_effect("Fast Pulse");
-          } else if (!isnan(id(current_temperature).state) &&
-                     id(current_temperature).state > ${overtemp_led_warning_threshold}) {
-            call.set_effect("Error Strobe");
-          } else if (id(controller_status).state == "Active") {
-            call.set_rgb(1.0, 0.5, 0.0);
-            call.set_brightness(0.75);
-            call.set_effect("Slow Pulse");
-          } else {
-            call.set_rgb(0.0, 1.0, 0.0);
-            call.set_brightness(0.3);
-            call.set_effect("None");
+          if (next_led_mode == STATUS_LED_EMERGENCY_STOP) {
+            red = 1.0f;
+            green = 0.0f;
+            blue = 0.0f;
+            brightness = 1.0f;
+          } else if (next_led_mode == STATUS_LED_WIFI_DISCONNECTED) {
+            red = 0.0f;
+            green = 0.0f;
+            blue = 1.0f;
+            brightness = 0.75f;
+            effect = "Fast Pulse";
+          } else if (next_led_mode == STATUS_LED_OVERTEMP_WARNING) {
+            effect = "Error Strobe";
+          } else if (next_led_mode == STATUS_LED_HEATER_ACTIVE) {
+            red = 1.0f;
+            green = 0.5f;
+            blue = 0.0f;
+            brightness = 0.75f;
+            effect = "Slow Pulse";
           }
 
+          if (id(status_led_mode) == static_cast<int>(next_led_mode)) {
+            return;
+          }
+
+          id(status_led_mode) = static_cast<int>(next_led_mode);
+          call.set_rgb(red, green, blue);
+          call.set_brightness(brightness);
+          call.set_effect(effect);
           call.perform();
 
 esp32:
@@ -118,6 +142,7 @@ esp32:
 
 esphome:
   includes:
+    - ../include/status_led_helper.h
     - ../include/wifi_protocol_helper.h
 
 light:

@@ -169,19 +169,13 @@ script:
     then:
       - lambda: |-
           const std::string &filament_raw = id(bambu_filament_type).state;
-
-          std::string filament_upper;
-          filament_upper.reserve(filament_raw.length());
-          std::transform(
-              filament_raw.begin(),
-              filament_raw.end(),
-              std::back_inserter(filament_upper),
-              [](unsigned char c) { return std::toupper(c); });
+          const std::string current_preset = id(filament_temp_preset).current_option();
+          const std::string filament_upper = to_upper_copy(filament_raw);
 
           auto type_it = id(filament_type_map).find(filament_upper);
 
           if (type_it != id(filament_type_map).end()) {
-            if (std::string(id(filament_temp_preset).current_option()) == type_it->second) {
+            if (current_preset == type_it->second) {
               ESP_LOGD(
                   "bambu",
                   "Chamber temperature preset already set to %s (%s filament)",
@@ -218,6 +212,10 @@ script:
           }
 
 esphome:
+  includes:
+    - ../include/api_client_helper.h
+    - ../include/preset_helper.h
+    - ../include/printer_state_helper.h
   name: ${device_name}
   friendly_name: ${friendly_name}
   comment: ${device_description}
@@ -244,19 +242,9 @@ api:
   on_client_connected:
     then:
       - lambda: |-
-          std::string client_name = client_info;
-          std::transform(
-              client_name.begin(),
-              client_name.end(),
-              client_name.begin(),
-              [](unsigned char c) { return std::tolower(c); });
+          const ApiClientType client_type = classify_api_client(client_info);
 
-          const bool is_home_assistant =
-              client_name.find("home assistant") != std::string::npos;
-          const bool is_esphome_logs =
-              client_name.find("esphome logs") != std::string::npos;
-
-          if (is_home_assistant) {
+          if (client_type == API_CLIENT_HOME_ASSISTANT) {
             id(home_assistant_api_client_count)++;
             id(api_connection) = true;
             ESP_LOGI(
@@ -266,7 +254,7 @@ api:
                 client_address.c_str());
             id(check_bambu_printer_online)->execute();
             id(maybe_auto_select_filament_preset)->execute();
-          } else if (is_esphome_logs) {
+          } else if (client_type == API_CLIENT_ESPHOME_LOGS) {
             ESP_LOGI(
                 "api",
                 "ESPHome log client connected: %s (%s)",
@@ -282,19 +270,9 @@ api:
   on_client_disconnected:
     then:
       - lambda: |-
-          std::string client_name = client_info;
-          std::transform(
-              client_name.begin(),
-              client_name.end(),
-              client_name.begin(),
-              [](unsigned char c) { return std::tolower(c); });
+          const ApiClientType client_type = classify_api_client(client_info);
 
-          const bool is_home_assistant =
-              client_name.find("home assistant") != std::string::npos;
-          const bool is_esphome_logs =
-              client_name.find("esphome logs") != std::string::npos;
-
-          if (is_home_assistant) {
+          if (client_type == API_CLIENT_HOME_ASSISTANT) {
             if (id(home_assistant_api_client_count) > 0) {
               id(home_assistant_api_client_count)--;
             }
@@ -315,7 +293,7 @@ api:
             return;
           }
 
-          if (is_esphome_logs) {
+          if (client_type == API_CLIENT_ESPHOME_LOGS) {
             ESP_LOGI(
                 "api",
                 "ESPHome log client disconnected: %s (%s)",
@@ -514,8 +492,7 @@ binary_sensor:
         return false;
       }
 
-      const std::string &status = id(bambu_printer_status).state;
-      return status == "running" || status == "prepare" || status == "slicing";
+      return is_printer_actively_printing(id(bambu_printer_status).state);
 
 text_sensor:
   - platform: homeassistant
@@ -749,8 +726,9 @@ text_sensor:
       then:
         - component.update: printer_status
         - lambda: |-
-            if (x == "finish" || x == "failed" || x == "offline" || x == "idle") {
-              if (std::string(id(filament_temp_preset).current_option()) != "Off") {
+            const std::string current_preset = id(filament_temp_preset).current_option();
+            if (is_printer_inactive(x)) {
+              if (current_preset != "Off") {
                 auto call = id(filament_temp_preset).make_call();
                 call.set_option("Off");
                 call.perform();
@@ -912,15 +890,13 @@ select:
               float temp_stop = it->second.second;
               bool boot_ready = id(boot_complete);
 
-              if (isnan(id(temp_threshold_start).state) ||
-                  fabsf(id(temp_threshold_start).state - temp_start) > 0.05f) {
+              if (should_update_threshold(id(temp_threshold_start).state, temp_start)) {
                 auto call_start = id(temp_threshold_start).make_call();
                 call_start.set_value(temp_start);
                 call_start.perform();
               }
 
-              if (isnan(id(temp_threshold_stop).state) ||
-                  fabsf(id(temp_threshold_stop).state - temp_stop) > 0.05f) {
+              if (should_update_threshold(id(temp_threshold_stop).state, temp_stop)) {
                 auto call_stop = id(temp_threshold_stop).make_call();
                 call_stop.set_value(temp_stop);
                 call_stop.perform();
