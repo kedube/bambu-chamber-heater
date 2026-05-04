@@ -218,7 +218,6 @@ esphome:
     - ../include/printer_state_helper.h
   name: ${device_name}
   friendly_name: ${friendly_name}
-  comment: ${device_description}
   area: ${device_area}
   on_boot:
     priority: 200
@@ -662,14 +661,6 @@ text_sensor:
             }
     web_server:
       sorting_group_id: sorting_group_sensors
-
-  - platform: version
-    name: "Firmware Version"
-    id: firmware_version
-    hide_timestamp: true
-    icon: "mdi:chip"
-    web_server:
-      sorting_group_id: sorting_group_diagnostic
 
   - platform: wifi_info
     ssid:
