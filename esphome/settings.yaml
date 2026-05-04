@@ -1,6 +1,7 @@
 substitutions:
   device_name: "chamber-heater"
   friendly_name: "Chamber Heater Controller"
+  device_comment: "ESPHome Modbus interface for Sinilink XY-SA/ST temperature controllers"
   device_area: "Office"
   bambu_printer_entity_id: !secret bambu_printer_id
   sw_version: "1.7.5"

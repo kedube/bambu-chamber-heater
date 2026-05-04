@@ -218,6 +218,7 @@ esphome:
     - ../include/printer_state_helper.h
   name: ${device_name}
   friendly_name: ${friendly_name}
+  comment: ${device_comment}
   area: ${device_area}
   on_boot:
     priority: 200
