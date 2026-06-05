@@ -207,7 +207,8 @@ script:
             return;
           }
 
-          if (id(printer_is_actively_printing).state) {
+          const std::string &printer_status = id(bambu_printer_status).state;
+          if (is_printer_actively_printing(printer_status)) {
             id(auto_select_filament_preset)->execute();
           }
 
