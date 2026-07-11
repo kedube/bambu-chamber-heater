@@ -55,7 +55,7 @@ This project allows you to automatically manage a chamber heater, link it to pri
 
 ### Common Hardware
 - Bambu P1S / X1 Carbon 3D Printer
-- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller  _(no need to get the SA30 since the SA10 can handles nearly 5 times the amperage for a 250W heater)_ 
+- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller  _(no need to get the SA30 since the SA10 can handle nearly 5 times the amperage for a 250W heater)_ 
 - NOYITO AC 100V-264V to DC 24V 1A Power Supply Module _(powers the 24V Fan only)_
 - AC 120/240V PTC Heater 200-250W _(no need to be more powerful than this)_
 - (2) 3-Way WAGO Connectors
@@ -79,7 +79,7 @@ This project allows you to automatically manage a chamber heater, link it to pri
 ### ESP8285 Hardware
 - Sinilink XY-WFPOW (ESP8285-based) wireless module
 - 24V 4020 2-wire fan _(Used: SUNON MF40202VX-1000U-A99 with 10.8CFM airflow)_
-- USB-to-TTL UART programmer _(only needed for the initial flash; high recommend FTDI-based programmers)_
+- USB-to-TTL UART programmer _(only needed for the initial flash; highly recommend FTDI-based programmers)_
 
 ### ESP32-C6-Zero Hardware
 - Waveshare ESP32-C6-Zero with 2 x 9-pin headers soldered
@@ -157,7 +157,7 @@ The ESP32-C6-Zero retrofit uses a separate module and adds fan RPM monitoring an
 ### 1. Install ESPHome
 Follow the official directions on the [ESPHome website](https://esphome.io/guides/installing_esphome/).
 
-If you're using MacOS, the easiest way to install is via [Homebrew](https://brew.sh/) by running this command in a MacOS terminal window:
+If you're using macOS, the easiest way to install is via [Homebrew](https://brew.sh/) by running this command in a macOS terminal window:
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
@@ -193,8 +193,9 @@ Important values include:
 - `encryption_key`
 - `bambu_printer_id`
 
-Shared substitutions such as `device_name`, `friendly_name`, software version, filament preset defaults, and Modbus timing are now defined in `esphome/settings.yaml`.
-Use that file for additional shared configuration changes before editing the controller or device packages directly.
+Shared substitutions such as `device_name`, `friendly_name`, software version, and filament preset defaults are defined in `esphome/settings.yaml`.
+Most runtime behavior, Modbus transport settings, and automations are defined in `esphome/packages/controller_shared.yaml`.
+Use those files for shared configuration changes before editing device-specific packages.
 
 Generate a valid 32-byte encryption key (see: [ESPHome.io](https://esphome.io/components/api/)), and insert it under `encryption_key`.
 
@@ -234,7 +235,7 @@ esphome run esphome/temp_controller.yaml
 
 ### 7. First Flash
 
-Once ESPHome successfully compiles the YAML configuration, it will prompt you to flash the module. For the first flast, it must be connected to your compluter to upload the firmware.
+Once ESPHome successfully compiles the YAML configuration, it will prompt you to flash the module. For the first flash, the device must be connected to your computer to upload the firmware.
 
 ### ESP8285 / XY-WFPOW
 For the ESP8285, use the USB-to-TTL adapter programmer at **3.3V** and the XY-WFPOW flashing pins:
@@ -266,7 +267,7 @@ The onboard **WS2812 RGB LED** (connected to GPIO8) provides real-time visual st
 | Heating Active | Orange | Slow Pulse | Heater is running |
 | Normal/Idle | Green | Solid (dim) | Everything OK |
 
-The LED updates automatically every 2 seconds and immediately responds to WiFi and emergency stop state changes, providing at-a-glance status without needing to check the web interface or Home Assistant.
+The LED updates automatically via state-change triggers (for example Wi-Fi connect/disconnect) plus periodic refresh, providing at-a-glance status without needing to check the web interface or Home Assistant.
 
 ### Upload Firmware Over USB With ESPHome
 
@@ -285,7 +286,7 @@ After the initial flash, both device types can be updated over the air (OTA) usi
 ### 8. Web UI
 A local web server starts on port `80` after installation. You can access it from a browser on your local network using the username and password configured in `secrets.yaml`.
 
-![Alt Web UI Screenshot](images/screenshot.png)
+![Alt Web UI Screenshot](docs/images/screenshot.png)
 
 ### 9. Home Assistant
 Once online, the device should be discovered by the ESPHome integration in Home Assistant. Use the same `encryption_key` configured in `esphome/secrets.yaml`.
