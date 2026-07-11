@@ -90,13 +90,17 @@ script:
               id(current_temperature).state,
               ${overtemp_led_warning_threshold},
               id(controller_status).state);
+
+          if (id(status_led_mode) == static_cast<int>(next_led_mode)) {
+            return;
+          }
+          id(status_led_mode) = static_cast<int>(next_led_mode);
+
           float red = 0.0f;
           float green = 1.0f;
           float blue = 0.0f;
           float brightness = 0.3f;
           const char *effect = "None";
-
-          auto call = id(status_led).turn_on();
 
           if (next_led_mode == STATUS_LED_EMERGENCY_STOP) {
             red = 1.0f;
@@ -119,11 +123,7 @@ script:
             effect = "Slow Pulse";
           }
 
-          if (id(status_led_mode) == static_cast<int>(next_led_mode)) {
-            return;
-          }
-
-          id(status_led_mode) = static_cast<int>(next_led_mode);
+          auto call = id(status_led).turn_on();
           call.set_rgb(red, green, blue);
           call.set_brightness(brightness);
           call.set_effect(effect);

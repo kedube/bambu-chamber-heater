@@ -17,33 +17,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+substitutions:
+  # Text sensor filter that drops publishes when the value is unchanged, so
+  # identical state isn't re-sent to the API and web server on every modbus poll.
+  # (Filament type aliases live in include/preset_helper.h - lookup_filament_preset_name)
+  text_dedup_filter: "static std::string last_published; if (x == last_published) return {}; last_published = x; return x;"
+
 globals:
-  # Filament type aliases - maps Bambu filament names to preset names
-  - id: filament_type_map
-    type: std::map<std::string, std::string>
-    restore_value: no
-    initial_value: |-
-      {
-        {"PLA", "PLA"}, {"PLA SILK", "PLA"}, {"PLA+", "PLA"}, {"PLA-CF", "PLA"},
-        {"MATTE PLA", "PLA"}, {"PLA HIGH SPEED", "PLA"},
-        {"TPU", "TPU"}, {"TPU 95A", "TPU"}, {"TPU 85A HF", "TPU"},
-        {"PETG", "PETG"}, {"PETG HF", "PETG"}, {"PETG-CF", "PETG"},
-        {"PETG-RCF", "PETG"}, {"PETG-ESD", "PETG"},
-        {"PCTG", "PCTG"},
-        {"ABS", "ABS"}, {"ABS-GF", "ABS"},
-        {"ASA", "ASA"}, {"ASA-CF", "ASA"}, {"ASA-AERO", "ASA"},
-        {"PC", "PC"}, {"PC FR", "PC"},
-        {"PET", "PET"}, {"PET-CF", "PET"},
-        {"PA", "PA"}, {"PA-CF", "PA"},
-        {"PA6", "PA6"}, {"PA6-GF", "PA6"}, {"PA6-CF", "PA6"},
-        {"PA12", "PA12"}, {"PA12-CF", "PA12"},
-        {"PA612", "PA612"}, {"PA612-CF", "PA612"},
-        {"PPA-GF", "PPA"}, {"PPA-CF", "PPA"},
-        {"PP", "PP"}, {"PP-GF", "PP"}, {"PP-CF", "PP"},
-        {"PPS", "PPS"}, {"PPS-CF", "PPS"},
-        {"PE", "PE"}, {"PE-CF", "PE"},
-        {"PAHT-CF", "PAHT"}
-      }
   - id: restart_confirmed
     type: bool
     restore_value: no
@@ -96,18 +76,6 @@ globals:
     type: bool
     restore_value: no
     initial_value: "false"
-  - id: last_controller_status_logged
-    type: std::string
-    restore_value: no
-    initial_value: '"__init__"'
-  - id: last_temperature_unit_logged
-    type: std::string
-    restore_value: no
-    initial_value: '"__init__"'
-  - id: last_controller_mode_logged
-    type: std::string
-    restore_value: no
-    initial_value: '"__init__"'
 
 script:
   - id: write_temp_unit
@@ -172,26 +140,26 @@ script:
           const std::string current_preset = id(filament_temp_preset).current_option();
           const std::string filament_upper = to_upper_copy(filament_raw);
 
-          auto type_it = id(filament_type_map).find(filament_upper);
+          const char *mapped_preset = lookup_filament_preset_name(filament_upper);
 
-          if (type_it != id(filament_type_map).end()) {
-            if (current_preset == type_it->second) {
+          if (mapped_preset != nullptr) {
+            if (current_preset == mapped_preset) {
               ESP_LOGD(
                   "bambu",
                   "Chamber temperature preset already set to %s (%s filament)",
-                  type_it->second.c_str(),
+                  mapped_preset,
                   filament_raw.c_str());
               return;
             }
 
             auto call = id(filament_temp_preset).make_call();
-            call.set_option(type_it->second);
+            call.set_option(mapped_preset);
             call.perform();
 
             ESP_LOGI(
                 "bambu",
                 "Auto-set chamber temperature preset to %s (%s filament)",
-                type_it->second.c_str(),
+                mapped_preset,
                 filament_raw.c_str());
           } else {
             ESP_LOGW(
@@ -224,6 +192,9 @@ esphome:
   on_boot:
     priority: 200
     then:
+      # Compiled log ceiling is DEBUG; run at INFO until Modbus Debugging is enabled
+      # so steady-state polling doesn't format/dispatch debug messages.
+      - logger.set_level: INFO
       - switch.turn_on: emergency_stop_internal
       - script.execute: write_temp_unit
       - delay: ${emergency_check_delay}
@@ -356,7 +327,7 @@ uart:
             }
 
 modbus:
-  send_wait_time: 1s
+  send_wait_time: 250ms
   uart_id: uart_bus
   disable_crc: false
   role: client
@@ -559,18 +530,17 @@ text_sensor:
       if (v == 0) return std::string("Stopped");
       if (v == 1) return std::string("Active");
       return std::string("Unknown");
+    filters:
+      - lambda: "${text_dedup_filter}"
     on_value:
       then:
         - lambda: |-
-            if (x != id(last_controller_status_logged)) {
-              id(last_controller_status_logged) = x;
-              if (x == "Stopped") {
-                ESP_LOGI("heater", "Chamber heater stopped");
-              } else if (x == "Active") {
-                ESP_LOGI("heater", "Chamber heater active");
-              } else {
-                ESP_LOGW("heater", "Chamber heater status unknown");
-              }
+            if (x == "Stopped") {
+              ESP_LOGI("heater", "Chamber heater stopped");
+            } else if (x == "Active") {
+              ESP_LOGI("heater", "Chamber heater active");
+            } else {
+              ESP_LOGW("heater", "Chamber heater status unknown");
             }
         - script.execute: check_fan_failure
         - script.execute: update_status_led
@@ -617,18 +587,17 @@ text_sensor:
       if (v == 0) return std::string("Celsius");
       if (v == 1) return std::string("Fahrenheit");
       return std::string("Unknown");
+    filters:
+      - lambda: "${text_dedup_filter}"
     on_value:
       then:
         - lambda: |-
-            if (x != id(last_temperature_unit_logged)) {
-              id(last_temperature_unit_logged) = x;
-              if (x == "Celsius") {
-                ESP_LOGI("heater", "Chamber heater operating in Celsius");
-              } else if (x == "Fahrenheit") {
-                ESP_LOGI("heater", "Chamber heater operating in Fahrenheit");
-              } else {
-                ESP_LOGW("heater", "Chamber heater temperature unit unknown");
-              }
+            if (x == "Celsius") {
+              ESP_LOGI("heater", "Chamber heater operating in Celsius");
+            } else if (x == "Fahrenheit") {
+              ESP_LOGI("heater", "Chamber heater operating in Fahrenheit");
+            } else {
+              ESP_LOGW("heater", "Chamber heater temperature unit unknown");
             }
     web_server:
       sorting_group_id: sorting_group_sensors
@@ -648,18 +617,17 @@ text_sensor:
       if (v == 0) return std::string("Heating");
       if (v == 1) return std::string("Cooling");
       return std::string("Unknown");
+    filters:
+      - lambda: "${text_dedup_filter}"
     on_value:
       then:
         - lambda: |-
-            if (x != id(last_controller_mode_logged)) {
-              id(last_controller_mode_logged) = x;
-              if (x == "Heating") {
-                ESP_LOGI("heater", "Chamber heater operating in Heating mode");
-              } else if (x == "Cooling") {
-                ESP_LOGI("heater", "Chamber heater operating in Cooling mode");
-              } else {
-                ESP_LOGW("heater", "Chamber heater controller mode unknown");
-              }
+            if (x == "Heating") {
+              ESP_LOGI("heater", "Chamber heater operating in Heating mode");
+            } else if (x == "Cooling") {
+              ESP_LOGI("heater", "Chamber heater operating in Cooling mode");
+            } else {
+              ESP_LOGW("heater", "Chamber heater controller mode unknown");
             }
     web_server:
       sorting_group_id: sorting_group_sensors
@@ -705,9 +673,15 @@ text_sensor:
     id: emergency_stop_time_sensor
     icon: "mdi:clock-alert"
     lambda: |-
+      static bool published_not_active = false;
       if (id(emergency_stop_timestamp) == 0) {
+        if (published_not_active) {
+          return {};
+        }
+        published_not_active = true;
         return std::string("Not Active");
       }
+      published_not_active = false;
       unsigned long elapsed_sec = (millis() - id(emergency_stop_timestamp)) / 1000;
 
       unsigned long days = elapsed_sec / 86400;
@@ -896,10 +870,10 @@ select:
               return;
             }
 
-            auto it = id(filament_presets).find(x);
-            if (it != id(filament_presets).end()) {
-              float temp_start = it->second.first;
-              float temp_stop = it->second.second;
+            const FilamentPresetEntry *preset = find_filament_preset(id(filament_presets), x);
+            if (preset != nullptr) {
+              float temp_start = preset->second.first;
+              float temp_stop = preset->second.second;
               bool boot_ready = id(boot_complete);
 
               if (should_update_threshold(id(temp_threshold_start).state, temp_start)) {
