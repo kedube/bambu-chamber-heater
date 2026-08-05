@@ -2,7 +2,7 @@
 
 Notable changes for each tagged release. Versions correspond to git tags and to the `sw_version` substitution in `esphome/settings.yaml`.
 
-## Unreleased
+## 1.8.1 — 2026-08-05
 - **Fixed:** Fahrenheit builds applied Celsius-valued safety thresholds. The runaway-detection rate limit and the ESP32 over-temperature LED threshold now live in the unit packages with converted values (`0.9°F/s`, `140°F`) — previously a Fahrenheit ESP32 build showed the over-temperature strobe above 60°F (~15.6°C), i.e. at room temperature.
 - **Fixed:** Removed the `disable_crc` Modbus option, which was removed from ESPHome and failed validation on 2026.7.
 - Added GitHub Actions CI: host unit tests, `esphome config` for all device/unit combinations, and `esphome compile` for both device targets (pinned to ESPHome 2026.7.2).
