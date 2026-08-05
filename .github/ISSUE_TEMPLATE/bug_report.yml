@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a problem with the chamber heater firmware or documentation
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device variant
+      options:
+        - ESP8285 / XY-WFPOW
+        - ESP32-C6-Zero
+        - Both / not device-specific
+    validations:
+      required: true
+  - type: dropdown
+    id: unit
+    attributes:
+      label: Temperature unit build
+      options:
+        - Celsius
+        - Fahrenheit
+    validations:
+      required: true
+  - type: input
+    id: firmware-version
+    attributes:
+      label: Firmware version
+      description: The `sw_version` from `esphome/settings.yaml` (shown as the Software Version sensor in the web UI / Home Assistant).
+      placeholder: "1.8.0"
+    validations:
+      required: true
+  - type: input
+    id: esphome-version
+    attributes:
+      label: ESPHome version
+      description: Output of `esphome version` on the machine you build with.
+      placeholder: "2026.7.2"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead? Include what the printer was doing at the time (idle, printing, just finished) and the filament preset in use.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Device logs
+      description: >
+        Paste relevant ESPHome logs (`esphome logs esphome/temp_controller.yaml` or the web UI log view).
+        If an emergency stop tripped, include the lines tagged `EMERGENCY` — they record the exact cause.
+        For Modbus communication issues, turn on the "Modbus Debugging" switch first so the raw frames are logged.
+      render: text
+  - type: input
+    id: ha-versions
+    attributes:
+      label: Home Assistant / Bambu Lab integration versions (if relevant)
+      placeholder: "HA 2026.7.3, ha-bambulab 2.1.0"

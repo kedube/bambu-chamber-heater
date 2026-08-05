@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit-tests:
+    name: Helper unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run tests
+        run: ./test/run_tests.sh
+
+  esphome:
+    name: ESPHome ${{ matrix.device }} / ${{ matrix.unit }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [esp8285, esp32]
+        unit: [celsius, fahrenheit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Keep this pin in sync with the version noted in README Requirements.
+      - name: Install ESPHome
+        run: pip install "esphome==2026.7.2"
+
+      - name: Create CI secrets
+        run: |
+          cat > esphome/secrets.yaml <<'EOF'
+          wifi_ssid: "ci-network"
+          wifi_password: "ci-wifi-password"
+          ap_wifi_ssid: "chamber-heater"
+          ap_wifi_password: "ci-ap-password"
+          web_server_username: "admin"
+          web_server_password: "ci-web-password"
+          ota_password: "ci-ota-password"
+          encryption_key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+          bambu_printer_id: "p1s_0123456789abcdef"
+          EOF
+
+      # The checked-in entry files build Celsius; swap the unit package include
+      # for the Fahrenheit leg of the matrix (no-op for Celsius).
+      - name: Generate build target
+        run: |
+          sed 's#file: packages/celsius.yaml#file: packages/${{ matrix.unit }}.yaml#' \
+            "esphome/temp_controller_${{ matrix.device }}.yaml" > esphome/ci_build.yaml
+          cat esphome/ci_build.yaml
+
+      - name: Validate configuration
+        run: esphome config esphome/ci_build.yaml
+
+      # Compiling one unit variant per platform is enough: Celsius and
+      # Fahrenheit differ only in numeric substitutions.
+      - name: Cache build tools
+        if: matrix.unit == 'celsius'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            esphome/.esphome
+          key: pio-${{ matrix.device }}-${{ hashFiles('esphome/**/*.yaml') }}
+          restore-keys: |
+            pio-${{ matrix.device }}-
+
+      - name: Compile firmware
+        if: matrix.unit == 'celsius'
+        run: esphome compile esphome/ci_build.yaml

@@ -1,7 +1,6 @@
 .DS_Store
 .pio/
+.venv/
 .vscode/
 esphome/.esphome/
 esphome/secrets.yaml
-esphome/.gitignore
-.gitignore

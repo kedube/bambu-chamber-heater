@@ -329,7 +329,6 @@ uart:
 modbus:
   send_wait_time: 250ms
   uart_id: uart_bus
-  disable_crc: false
   role: client
   id: modbus1
 

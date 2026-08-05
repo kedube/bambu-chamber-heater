@@ -31,6 +31,10 @@
 substitutions:
   temp_unit: "Celsius"
   temp_unit_label: "°C"
+  # Unit-sensitive safety thresholds. These live in the unit packages (not
+  # settings.yaml) because their values only make sense in one temperature unit.
+  max_temp_rise_rate: "0.5" # °C/s - faster sustained rise trips runaway detection
+  overtemp_led_warning_threshold: "60.0" # °C - ESP32 status LED over-temp strobe
 
 globals:
   # Filament-specific temperature presets with ±1°C hysteresis

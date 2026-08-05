@@ -31,6 +31,10 @@
 substitutions:
   temp_unit: "Fahrenheit"
   temp_unit_label: "°F"
+  # Unit-sensitive safety thresholds. These live in the unit packages (not
+  # settings.yaml) because their values only make sense in one temperature unit.
+  max_temp_rise_rate: "0.9" # °F/s - equivalent to the 0.5°C/s Celsius default
+  overtemp_led_warning_threshold: "140.0" # °F - equivalent to the 60°C Celsius default
 
 globals:
   # Filament-specific temperature presets with ±1°F hysteresis

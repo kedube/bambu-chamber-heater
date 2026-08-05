@@ -1,6 +1,6 @@
 #
 # Bambu Chamber Heater Modbus Controller for Sinilink XY-SA/ST series temperature controllers.
-# Shared Fahrenheit unit package for ESP8285 and ESP32-C6-Zero builds.
+# ESP32-C6-Zero entrypoint for the unified chamber heater configuration.
 # Copyright (C) 2026    Katherine Dubé
 #
 # This program is free software: you can redistribute it and/or modify

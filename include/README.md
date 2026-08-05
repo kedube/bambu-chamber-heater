@@ -1,36 +1,11 @@
-This directory is intended for project header files.
+# Helper Headers
 
-A header file is a file containing C declarations and macro definitions
-to be shared between several project source files. You request the use of a
-header file in your project source file (C, C++, etc) located in `src` folder
-by including it, with the C preprocessing directive `#include'.
+C++ helpers included by the ESPHome YAML packages (see the `esphome:` → `includes:` lists in `esphome/packages/`). Keeping this logic in headers keeps the YAML lambdas short and lets both device targets share one implementation.
 
-```src/main.c
-
-#include "header.h"
-
-int main (void)
-{
- ...
-}
-```
-
-Including a header file produces the same results as copying the header file
-into each source file that needs it. Such copying would be time-consuming
-and error-prone. With a header file, the related declarations appear
-in only one place. If they need to be changed, they can be changed in one
-place, and programs that include the header file will automatically use the
-new version when next recompiled. The header file eliminates the labor of
-finding and changing all the copies as well as the risk that a failure to
-find one copy will result in inconsistencies within a program.
-
-In C, the convention is to give header files names that end with `.h'.
-
-Read more about using header files in official GCC documentation:
-
-* Include Syntax
-* Include Operation
-* Once-Only Headers
-* Computed Includes
-
-https://gcc.gnu.org/onlinedocs/cpp/Header-Files.html
+| Header | Used by | Purpose |
+| :--- | :--- | :--- |
+| `api_client_helper.h` | `controller_shared.yaml` | Classifies ESPHome API clients (Home Assistant vs. log viewers vs. other) so the Home Assistant disconnect safety trigger doesn't fire when a log viewer disconnects. |
+| `preset_helper.h` | `controller_shared.yaml`, `celsius.yaml`, `fahrenheit.yaml` | Filament preset table lookup, Bambu filament-type → preset-name mapping, and threshold update helpers. |
+| `printer_state_helper.h` | `controller_shared.yaml` | Maps Bambu printer status strings to "actively printing" / "inactive" for the auto-heat and end-of-job shutoff logic. |
+| `status_led_helper.h` | `device_esp32.yaml` | Computes the WS2812 status LED mode (emergency stop, Wi-Fi lost, over-temp, heating, idle) from system state. |
+| `wifi_protocol_helper.h` | `device_esp32.yaml` | Reads the negotiated Wi-Fi PHY mode (802.11b/g/n/ax) from ESP-IDF for the Wi-Fi protocol diagnostic sensor. |

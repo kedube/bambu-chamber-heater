@@ -3,8 +3,34 @@ ESPHome implementation to remotely control **Sinilink XY-SA/ST series temperatur
 
 This project allows you to automatically manage a chamber heater, link it to print jobs, and control it through Home Assistant or the built-in web interface. It was inspired by the [BambuSauna project](https://makerworld.com/en/models/2417482-bambusauna-for-sinilink-xy-sa-st-temp-controller).
 
-![Alt screenshot](docs/images/bambusauna-1.jpeg)
-![Alt screenshot](docs/images/sinilink_temperature_controller.jpeg)
+![Assembled BambuSauna chamber heater installed on a Bambu Lab printer](docs/images/bambusauna-1.jpeg)
+![Sinilink XY-SA temperature controller module](docs/images/sinilink_temperature_controller.jpeg)
+
+## Table of Contents
+
+- [Supported Devices](#supported-devices)
+- [Features](#features)
+- [Filament Presets](#filament-presets)
+- [Repository Layout](#repository-layout)
+- [Requirements](#requirements)
+- [References](#references)
+- [Modbus Address Map](#modbus-address-map)
+- [Wiring Diagram and Installation Notes](#wiring-diagram-and-installation-notes)
+- [Setup](#setup)
+  - [1. Install ESPHome](#1-install-esphome)
+  - [2. Clone the Repository](#2-clone-the-repository)
+  - [3. Configure Secrets](#3-configure-secrets)
+  - [4. Choose Device and Temperature Unit](#4-choose-device-and-temperature-unit)
+  - [5. Validate the Configuration](#5-validate-the-configuration)
+  - [6. Build](#6-build)
+  - [7. First Flash](#7-first-flash)
+  - [8. Web UI](#8-web-ui)
+  - [9. Home Assistant](#9-home-assistant)
+- [Troubleshooting](#troubleshooting)
+- [Known Issues](#known-issues)
+- [Safety](#safety)
+- [License](#license)
+- [Contributing](#contributing)
 
 ## Supported Devices
 
@@ -14,25 +40,13 @@ This project allows you to automatically manage a chamber heater, link it to pri
 | ESP32-C6-Zero | `esphome/temp_controller_esp32.yaml` | External module retrofit, WS2812 status LED, fan RPM monitoring, Wi-Fi protocol sensor |
 | Manual selector | `esphome/temp_controller.yaml` | Main YAML with package toggles for device and temperature unit |
 
-## Repository Layout
-
-- `esphome/settings.yaml` contains the shared substitutions, default build settings, and additional shared configuration options you may want to customize.
-- `esphome/packages/controller_shared.yaml` contains the shared controller logic, Modbus entities, automations, and safety behavior.
-- `esphome/packages/device_esp8285.yaml` contains ESP8285-only framework, GPIO, and hardware configuration.
-- `esphome/packages/device_esp32.yaml` contains ESP32-C6-Zero-only framework, GPIO, fan monitoring, LED logic, and helper include usage.
-- `esphome/packages/celsius.yaml` and `esphome/packages/fahrenheit.yaml` contain unit-specific number ranges and preset math.
-- `esphome/temp_controller.yaml` is the main entrypoint if you want to switch device and unit by editing one file.
-- `assets/web/` contains the custom web UI CSS and JavaScript assets used by ESPHome's web server.
-- `docs/images/` contains README screenshots, wiring diagrams, and source artwork.
-- `hardware/3d-models/` contains printable enclosure and adapter `.3mf` files.
-
 ## Features
 
 ### Shared Features
 - ESPHome integration for Home Assistant
 - Standalone web interface
 - Automatic chamber temperature control based on print state and filament type
-- Filament presets plus user-defined mode
+- [Filament presets](#filament-presets) plus user-defined mode
 - Emergency stop handling
 - Over-temperature protection
 - Runaway heating detection
@@ -44,24 +58,68 @@ This project allows you to automatically manage a chamber heater, link it to pri
 
 ### ESP32-C6-Zero Extras
 - RPM monitoring for 3-wire fans with emergency-stop interlock
-- WS2812 RGB status LED with state-based colors and effects
 - Wi-Fi 6 support with protocol diagnostic sensor via [include/wifi_protocol_helper.h](include/wifi_protocol_helper.h)
+- WS2812 RGB status LED (GPIO8) with state-based colors and effects:
+
+| LED State | Color | Effect | Meaning |
+|-----------|-------|--------|---------|
+| Emergency Stop | Red | Solid | System emergency stopped |
+| WiFi Disconnected | Blue | Fast Pulse | Network connection lost |
+| Over Temperature | Red | Strobe | Temperature >60°C warning |
+| Heating Active | Orange | Slow Pulse | Heater is running |
+| Normal/Idle | Green | Solid (dim) | Everything OK |
+
+The LED updates automatically via state-change triggers (for example Wi-Fi connect/disconnect) plus periodic refresh, providing at-a-glance status without needing to check the web interface or Home Assistant.
+
+## Filament Presets
+
+When a print starts, the controller reads the active filament type from the Bambu Lab Home Assistant integration and automatically selects the matching chamber temperature preset. You can also select a preset manually (including for pre-heating before a print), or use **User-defined** mode to set your own thresholds. Selecting **Off** engages the emergency stop.
+
+Each preset targets the temperature below with a ±1°C hysteresis band (for example, PLA at 22°C starts heating at 21°C and stops at 23°C) to prevent rapid relay cycling. The defaults are defined as substitutions in [esphome/settings.yaml](esphome/settings.yaml) — adjust them there for your filament brands, printer, and enclosure.
+
+| Preset | Default Target (°C) | Preset | Default Target (°C) |
+| :--- | :---: | :--- | :---: |
+| PLA | 22 | PA | 60 |
+| TPU | 25 | PA6 | 80 |
+| PETG | 35 | PA12 | 60 |
+| PCTG | 35 | PA612 | 25 |
+| ABS | 55 | PPA | 70 |
+| ASA | 55 | PPS | 80 |
+| PC | 80 | PP | 55 |
+| PET | 50 | PE | 75 |
+| | | PAHT | 55 |
+
+## Repository Layout
+
+- `esphome/settings.yaml` contains the shared substitutions, default build settings, and additional shared configuration options you may want to customize.
+- `esphome/packages/controller_shared.yaml` contains the shared controller logic, Modbus entities, automations, and safety behavior.
+- `esphome/packages/device_esp8285.yaml` contains ESP8285-only framework, GPIO, and hardware configuration.
+- `esphome/packages/device_esp32.yaml` contains ESP32-C6-Zero-only framework, GPIO, fan monitoring, LED logic, and helper include usage.
+- `esphome/packages/celsius.yaml` and `esphome/packages/fahrenheit.yaml` contain unit-specific number ranges and preset math.
+- `esphome/temp_controller.yaml` is the main entrypoint if you want to switch device and unit by editing one file.
+- `include/` contains the shared C++ helper headers used by the YAML lambdas (see [include/README.md](include/README.md)).
+- `assets/web/` contains the custom web UI CSS and JavaScript assets used by ESPHome's web server.
+- `docs/images/` contains README screenshots, wiring diagrams, and source artwork; `docs/home-assistant-dashboard.md` has a ready-made Lovelace dashboard.
+- `hardware/3d-models/` contains printable enclosure and adapter `.3mf` files (print in ASA or PC — see [3D Printed Parts](#3d-printed-parts)).
+- `test/` contains host-side unit tests for the helper headers (`./test/run_tests.sh`).
+- `.github/workflows/ci.yml` runs the unit tests, validates every device/unit combination, and compiles both device targets on each push.
+- `CHANGELOG.md` tracks notable changes for each tagged release.
 
 ## Requirements
 
 ### Software
-- ESPHome installed locally
+- ESPHome installed locally _(validated against ESPHome 2026.7.2 in CI — see [.github/workflows/ci.yml](.github/workflows/ci.yml); older releases may need YAML adjustments)_
 - Home Assistant with the [Bambu Lab HA integration](https://github.com/greghesp/ha-bambulab)
 
 ### Common Hardware
 - Bambu P1S / X1 Carbon 3D Printer
-- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller  _(no need to get the SA30 since the SA10 can handle nearly 5 times the amperage for a 250W heater)_ 
+- Sinilink XY-SA10/SA30-W AC 110V-250V Temperature Controller _(the SA10 is sufficient — its 10A relay rating is roughly five times the ~2A a 250W heater draws; the SA30's higher rating is unnecessary here)_
 - NOYITO AC 100V-264V to DC 24V 1A Power Supply Module _(powers the 24V Fan only)_
 - AC 120/240V PTC Heater 200-250W _(no need to be more powerful than this)_
 - (2) 3-Way WAGO Connectors
 - 16-18Ga silicone wiring _(Used: red and black wiring)_
 - Heat set inserts: (15) M3x4x5 + (1) M2x2.5x3.2
-- Screws: 
+- Screws:
   - (7) M3x5MM or 6MM button screws for covers
   - (2) M3x25MM hex head screws for lower aux fan screws
   - (4) M3x25MM hex head screws for 24V Fan
@@ -71,8 +129,7 @@ This project allows you to automatically manage a chamber heater, link it to pri
   - (2) M4x12MM button screws to hold the PTC heater to the front cover
   - (2) M4 self-locking nuts to connect the PTC heater to the front cover
   - (1) M2x3MM machine screw to hold the wireless module to the housing
-- (1) XT30 connector pair set (both ends) to allow the chamber heater to be removed
-- XT30 connector pair _(to allow chamber heater to be removed from printer)_
+- (1) XT30 connector pair set (both ends) _(so the chamber heater can be unplugged and removed from the printer)_
 - Heatshrink tubing _(for XT30 connectors)_
 - Soldering equipment _(depending on the installation method)_
 
@@ -80,6 +137,9 @@ This project allows you to automatically manage a chamber heater, link it to pri
 - Sinilink XY-WFPOW (ESP8285-based) wireless module
 - 24V 4020 2-wire fan _(Used: SUNON MF40202VX-1000U-A99 with 10.8CFM airflow)_
 - USB-to-TTL UART programmer _(only needed for the initial flash; highly recommend FTDI-based programmers)_
+
+### 3D Printed Parts
+Print the enclosure and adapter parts in `hardware/3d-models/` in **ASA or PC only**. The housing sits against a 200-250W PTC heater and a printer that may itself run a heated chamber — PLA and PETG will soften and deform at these temperatures.
 
 ### ESP32-C6-Zero Hardware
 - Waveshare ESP32-C6-Zero with 2 x 9-pin headers soldered
@@ -139,30 +199,30 @@ Safety Notes:
 ### ESP8285 / XY-WFPOW
 Use the original Sinilink XY-WFPOW Wi-Fi module. The basic wiring diagram is shown below.
 
-![Alt Wiring Diagram](docs/images/bambusauna_wiring_diagram-esp8285.png)
-![Alt screenshot](docs/images/bambusauna-3.jpeg)
-![Alt screenshot](docs/images/bambusauna-2.jpeg)
+![ESP8285 / XY-WFPOW wiring diagram](docs/images/bambusauna_wiring_diagram-esp8285.png)
+![Heater housing interior showing the Sinilink controller and wiring](docs/images/bambusauna-3.jpeg)
+![Assembled heater housing mounted beneath the printer](docs/images/bambusauna-2.jpeg)
 
 ### ESP32-C6-Zero
 The ESP32-C6-Zero retrofit uses a separate module and adds fan RPM monitoring and RGB LED status indication.
 
-![Alt Wiring Diagram](docs/images/bambusauna_wiring_diagram-esp32.png)
-![Alt ESP32 Pinout](docs/images/esp32-c6-zero-pinout.png)
-![Alt screenshot](docs/images/esp32-wiring-harness.jpeg)
-![Alt screenshot](docs/images/bambusauna-4.jpeg)
-![Alt screenshot](docs/images/bambusauna-esp32.jpeg)
+![ESP32-C6-Zero wiring diagram](docs/images/bambusauna_wiring_diagram-esp32.png)
+![Waveshare ESP32-C6-Zero pinout reference](docs/images/esp32-c6-zero-pinout.png)
+![ESP32-C6-Zero wiring harness with JST connector](docs/images/esp32-wiring-harness.jpeg)
+![Heater housing interior with the ESP32-C6-Zero installed](docs/images/bambusauna-4.jpeg)
+![Close-up of the ESP32-C6-Zero module mounted in the housing](docs/images/bambusauna-esp32.jpeg)
 
 ## Setup
 
 ### 1. Install ESPHome
 Follow the official directions on the [ESPHome website](https://esphome.io/guides/installing_esphome/).
 
-If you're using macOS, the easiest way to install is via [Homebrew](https://brew.sh/) by running this command in a macOS terminal window:
+On macOS, the easiest path is [Homebrew](https://brew.sh/). If you don't already have Homebrew, install it first:
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-Now install ESPHome:
+Then install ESPHome:
 ```bash
 brew install esphome
 ```
@@ -182,7 +242,6 @@ cp esphome/secrets-example.yaml esphome/secrets.yaml
 ```
 
 Important values include:
-- `location_name`
 - `wifi_ssid`
 - `wifi_password`
 - `ap_wifi_ssid`
@@ -192,6 +251,8 @@ Important values include:
 - `ota_password`
 - `encryption_key`
 - `bambu_printer_id`
+
+The example file also contains commented-out keys (`static_ip`, `gateway`, `subnet`, `dns1`, `dns2`) for an optional static IP configuration — uncomment them (and the matching `manual_ip:` block in `esphome/packages/controller_shared.yaml`) if you need one.
 
 Shared substitutions such as `device_name`, `friendly_name`, software version, and filament preset defaults are defined in `esphome/settings.yaml`.
 Most runtime behavior, Modbus transport settings, and automations are defined in `esphome/packages/controller_shared.yaml`.
@@ -219,7 +280,7 @@ If you prefer a fixed compile target, use one of these:
 - `esphome/temp_controller_esp8285.yaml`
 - `esphome/temp_controller_esp32.yaml`
 
-### 5. Validate The Configuration
+### 5. Validate the Configuration
 
 ```bash
 esphome config esphome/temp_controller.yaml
@@ -237,10 +298,10 @@ esphome run esphome/temp_controller.yaml
 
 Once ESPHome successfully compiles the YAML configuration, it will prompt you to flash the module. For the first flash, the device must be connected to your computer to upload the firmware.
 
-### ESP8285 / XY-WFPOW
+#### ESP8285 / XY-WFPOW
 For the ESP8285, use the USB-to-TTL adapter programmer at **3.3V** and the XY-WFPOW flashing pins:
 
-![Alt ESP8285 Diagram](https://raw.githubusercontent.com/creepystefan/ESPhome-Sinilink-XY-WFPOW/main/src/docs/devices/sinilink_XY-WFPOW_pinout.jpg)
+![Sinilink XY-WFPOW flashing pinout (source: creepystefan/ESPhome-Sinilink-XY-WFPOW)](docs/images/sinilink_xy-wfpow_pinout.jpg)
 ```text
 GND -> GND
 TXD -> RXD
@@ -251,25 +312,13 @@ RST -> not connected
 ```
 
 Adapter board photos:
-![Alt Programming Adapter Board 1](docs/images/adapter_board-1.jpeg)
-![Alt Programming Adapter Board 2](docs/images/adapter_board-2.jpeg)
+![USB-to-TTL programming adapter board, top view](docs/images/adapter_board-1.jpeg)
+![USB-to-TTL programming adapter board connected to the XY-WFPOW](docs/images/adapter_board-2.jpeg)
 
-### ESP32-C6-Zero
-For the ESP32-C6-Zero, you must connect the board via USB-C and flash it directly. It will prompt you after a successful build for where to upload the code. 
+#### ESP32-C6-Zero
+For the ESP32-C6-Zero, you must connect the board via USB-C and flash it directly. It will prompt you after a successful build for where to upload the code. Once running, the onboard WS2812 RGB LED shows live system status — see the [LED state table](#esp32-c6-zero-extras) under Features.
 
-The onboard **WS2812 RGB LED** (connected to GPIO8) provides real-time visual status feedback:
-
-| LED State | Color | Effect | Meaning |
-|-----------|-------|--------|---------|
-| Emergency Stop | Red | Solid | System emergency stopped |
-| WiFi Disconnected | Blue | Fast Pulse | Network connection lost |
-| Over Temperature | Red | Strobe | Temperature >60°C warning |
-| Heating Active | Orange | Slow Pulse | Heater is running |
-| Normal/Idle | Green | Solid (dim) | Everything OK |
-
-The LED updates automatically via state-change triggers (for example Wi-Fi connect/disconnect) plus periodic refresh, providing at-a-glance status without needing to check the web interface or Home Assistant.
-
-### Upload Firmware Over USB With ESPHome
+#### Upload Firmware Over USB With ESPHome
 
 ```text
 INFO Build Info: config_hash=0x694d2e36 build_time_str=2026-04-01 14:02:17 -0400
@@ -280,26 +329,51 @@ Found multiple options for uploading, please choose one:
 (number):
 ```
 
-### Subsequent Flashes
+#### Subsequent Flashes
 After the initial flash, both device types can be updated over the air (OTA) using ESPHome.
 
 ### 8. Web UI
 A local web server starts on port `80` after installation. You can access it from a browser on your local network using the username and password configured in `secrets.yaml`.
 
-![Alt Web UI Screenshot](docs/images/screenshot.png)
+![Chamber heater web interface showing sensors, settings, and system controls](docs/images/screenshot.png)
+
+The web UI's animated background is selectable in `esphome/packages/controller_shared.yaml` under `web_server:` → `js_include`. Three effects ship in `assets/web/`: `pixel-stars.js` (default), `moving-particles.js`, and `shooting-stars.js` — uncomment the one you want (only one at a time) and re-flash.
 
 ### 9. Home Assistant
 Once online, the device should be discovered by the ESPHome integration in Home Assistant. Use the same `encryption_key` configured in `esphome/secrets.yaml`.
 
-![Alt Home Assistant Encryption Key Screenshot](docs/images/home_assistant_1.png)
-![Alt Home Assistant Device Entities Screenshot](docs/images/home_assistant_2.png)
+![Home Assistant prompting for the ESPHome encryption key](docs/images/home_assistant_1.png)
+![Home Assistant device page listing the chamber heater entities](docs/images/home_assistant_2.png)
+
+For a ready-made dashboard layout (gauge, controls, and safety diagnostics), see [docs/home-assistant-dashboard.md](docs/home-assistant-dashboard.md).
+
+## Troubleshooting
+
+**The device boots with Emergency Stop engaged.** This is by design — the heater always starts disarmed. Select a filament preset (or clear the Emergency Stop switch) to begin heating.
+
+**Emergency Stop is on and selecting a preset doesn't clear it.** When the stop was triggered by a fault — thermal runaway, a temperature alarm, a disconnected sensor, Modbus communication loss, a fan failure, the printer going offline, or Home Assistant disconnecting — presets intentionally cannot clear it (the log shows *"Emergency stop remains active because it was triggered by a fault condition"*). Fix the underlying issue, then manually turn off the **Emergency Stop** switch in the web UI or Home Assistant to acknowledge the fault. The **Emergency Stop Time** sensor (System Management group) shows how long ago it tripped, and the device logs record the cause on lines tagged `EMERGENCY`.
+
+**Heater won't turn on.** Check, in order: the **Filament Temp Preset** isn't `Off`; **Emergency Stop** is off; **Delay Start** isn't holding the relay (watch **Delay Time Remaining**); and the current temperature isn't already above the **High Temp Threshold**. Note that when the printer reports an inactive state (finish, failed, offline, or idle), the end-of-job shutoff forces the preset back to `Off` — you can still pre-heat manually by selecting a preset, but a printer state change to inactive will turn it off again.
+
+**"No temperature updates" emergency stop (Modbus watchdog).** The watchdog trips if no temperature reading arrives for 90 seconds. Verify the UART wiring (TX/RX not swapped), that the controller's baud rate matches the build default of 115200, and that the Modbus address is 1. Turn on the **Modbus Debugging** switch to log the raw hex frames and confirm whether the controller is responding.
+
+**Fan failure emergency stop, or Fan RPM reads 0 (ESP32-C6-Zero).** A fan fault trips when RPM stays below 200 for 10 seconds while the heater is active. Confirm the fan is a 3-wire model with a tachometer lead, the tach line has its 10K pull-up to 3.3V, and the JST harness is seated. The thresholds (`fan_min_rpm`, `fan_fail_timeout_seconds`) are adjustable in `esphome/settings.yaml`.
+
+**Emergency stop whenever Home Assistant restarts or drops off the network.** Losing the Home Assistant API connection (or the printer's `_online` sensor going off) is treated as a fail-safe condition because print-state automation is no longer available. This is expected; clear the stop once Home Assistant reconnects. Check the **WIFI Signal Strength** sensor if it happens frequently.
+
+**Can't reach the web UI.** If the device can't join your Wi-Fi it starts a fallback access point (default SSID `chamber-heater`, configurable via `ap_wifi_ssid`) with a captive portal for reconfiguration. The web UI itself is on port 80 and uses the credentials from `secrets.yaml`.
+
+**The Restart button does nothing.** Turn on the **Restart Confirmation** switch first, then press **Restart** within 10 seconds — this guards against accidental restarts mid-print.
 
 ## Known Issues
-- The Sinilink Modbus addresses for the sleep switch (`0x0014`) and backlight level (`0x0015`) does not seem to have any effect on the backlight settings for XY-SA10/SA30 controllers.
+- The Sinilink Modbus addresses for the sleep switch (`0x0014`) and backlight level (`0x0015`) do not seem to have any effect on the backlight settings for XY-SA10/SA30 controllers.
 - Mixed-material prints will cause the chamber target temperature to fluctuate as the active filament changes.
 
 ## Safety
 The author assumes no liability for injury, damage, or loss resulting from wiring errors, improper installation, or misuse of this project. Electrical work can be hazardous. If you are unsure, consult a qualified professional.
 
+## License
+This project is licensed under the GNU General Public License v3.0 or later — see [LICENSE](LICENSE).
+
 ## Contributing
-Contributions are welcome for bug fixes, documentation improvements, and new hardware support. Please include testing details when possible.
+Contributions are welcome for bug fixes, documentation improvements, and new hardware support. Please include testing details when possible, and add an entry to [CHANGELOG.md](CHANGELOG.md) for user-visible changes.
