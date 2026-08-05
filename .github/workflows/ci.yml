@@ -2,15 +2,19 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
 
 jobs:
   unit-tests:
     name: Helper unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build and run tests
         run: ./test/run_tests.sh
 
@@ -23,11 +27,11 @@ jobs:
         device: [esp8285, esp32]
         unit: [celsius, fahrenheit]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       # Keep this pin in sync with the version noted in README Requirements.
       - name: Install ESPHome
@@ -74,3 +78,51 @@ jobs:
       - name: Compile firmware
         if: matrix.unit == 'celsius'
         run: esphome compile esphome/ci_build.yaml
+
+  # Weekly canary: validate every combination against the newest ESPHome
+  # release so upstream breaking changes (like the disable_crc removal)
+  # surface before anyone hits them locally. Failures here do not block
+  # merges or releases - this job only runs on the schedule or manually.
+  esphome-latest:
+    name: ESPHome latest (canary)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install latest ESPHome
+        run: |
+          pip install esphome
+          esphome version
+
+      - name: Create CI secrets
+        run: |
+          cat > esphome/secrets.yaml <<'EOF'
+          wifi_ssid: "ci-network"
+          wifi_password: "ci-wifi-password"
+          ap_wifi_ssid: "chamber-heater"
+          ap_wifi_password: "ci-ap-password"
+          web_server_username: "admin"
+          web_server_password: "ci-web-password"
+          ota_password: "ci-ota-password"
+          encryption_key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+          bambu_printer_id: "p1s_0123456789abcdef"
+          EOF
+
+      - name: Validate all combinations
+        run: |
+          status=0
+          for device in esp8285 esp32; do
+            for unit in celsius fahrenheit; do
+              echo "::group::${device} / ${unit}"
+              sed "s#file: packages/celsius.yaml#file: packages/${unit}.yaml#" \
+                "esphome/temp_controller_${device}.yaml" > esphome/ci_build.yaml
+              esphome config esphome/ci_build.yaml || status=1
+              echo "::endgroup::"
+            done
+          done
+          exit "$status"

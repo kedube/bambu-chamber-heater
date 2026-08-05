@@ -9,6 +9,7 @@ Notable changes for each tagged release. Versions correspond to git tags and to 
 - Added host-side unit tests for the `include/` helper headers (`./test/run_tests.sh`).
 - Added a Home Assistant Lovelace dashboard example (`docs/home-assistant-dashboard.md`), a GitHub bug-report template, and README/CHANGELOG documentation improvements.
 - Clarified that `platformio.ini` exists only for IDE IntelliSense; firmware builds go through the ESPHome CLI.
+- Added an automated release process: after CI passes on `main`, the Release workflow bumps `sw_version`, rotates this changelog's Unreleased section into the new version, and publishes a GitHub release with generated notes (highlights + commit list). CI also gained manual dispatch, a weekly schedule, and a latest-ESPHome canary job.
 
 ## 1.8.0 — 2026-07-11
 - Performance improvements and code optimizations.

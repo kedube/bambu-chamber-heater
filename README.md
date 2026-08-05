@@ -376,4 +376,13 @@ The author assumes no liability for injury, damage, or loss resulting from wirin
 This project is licensed under the GNU General Public License v3.0 or later — see [LICENSE](LICENSE).
 
 ## Contributing
-Contributions are welcome for bug fixes, documentation improvements, and new hardware support. Please include testing details when possible, and add an entry to [CHANGELOG.md](CHANGELOG.md) for user-visible changes.
+Contributions are welcome for bug fixes, documentation improvements, and new hardware support. Please include testing details when possible, and add user-visible changes to the `## Unreleased` section of [CHANGELOG.md](CHANGELOG.md) — the release automation turns that section into the published release notes.
+
+### Release Process
+Releases are fully automated by [.github/workflows/release.yml](.github/workflows/release.yml):
+
+1. Every push to `main` runs [CI](.github/workflows/ci.yml) (unit tests, ESPHome validation for all device/unit combinations, and firmware compiles).
+2. When CI passes, the Release workflow bumps the patch segment of `sw_version` in `esphome/settings.yaml`, rotates the CHANGELOG's `## Unreleased` section into the new version, and pushes a `chore(release): <version> [skip ci]` commit.
+3. A GitHub release is published for that version, with notes generated from the CHANGELOG section (Highlights), the commit list since the previous tag, and a full-changelog compare link.
+
+To cut a **minor or major** release, set `sw_version` yourself in a normal commit (e.g. `1.9.0`); because that version has no tag yet, the automation publishes it exactly as set, then resumes patch bumps. To re-publish a release for the current version (for example after a failed run), use the Release workflow's **Run workflow** button.
