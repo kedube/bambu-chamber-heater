@@ -189,6 +189,9 @@ esphome:
   friendly_name: ${friendly_name}
   comment: ${device_comment}
   area: ${device_area}
+  build_flags:
+    - -Os
+    - -DNDEBUG
   on_boot:
     priority: 200
     then:
@@ -203,11 +206,6 @@ esphome:
           ESP_LOGI("boot", "Boot complete - emergency stop checks now active");
       - script.execute: maybe_auto_select_filament_preset
       - script.execute: update_status_led
-  platformio_options:
-    build_flags:
-      - -Os
-      - -DNDEBUG
-
 api:
   encryption:
     key: !secret encryption_key
@@ -525,7 +523,7 @@ text_sensor:
     id: controller_status
     icon: "mdi:thermostat"
     lambda: |-
-      uint16_t v = modbus_controller::word_from_hex_str(x, 0);
+      uint16_t v = modbus::helpers::word_from_hex_str(x, 0);
       if (v == 0) return std::string("Stopped");
       if (v == 1) return std::string("Active");
       return std::string("Unknown");
@@ -557,7 +555,7 @@ text_sensor:
     id: sensor_status
     icon: "mdi:information-outline"
     lambda: |-
-      switch (modbus_controller::word_from_hex_str(x, 0)) {
+      switch (modbus::helpers::word_from_hex_str(x, 0)) {
         case 0: return std::string("Connected");
         case 1: return std::string("Disconnected");
         default: return std::string("Unknown");
@@ -582,7 +580,7 @@ text_sensor:
     id: temperature_unit
     icon: "mdi:temperature-auto"
     lambda: |-
-      uint16_t v = modbus_controller::word_from_hex_str(x, 0);
+      uint16_t v = modbus::helpers::word_from_hex_str(x, 0);
       if (v == 0) return std::string("Celsius");
       if (v == 1) return std::string("Fahrenheit");
       return std::string("Unknown");
@@ -612,7 +610,7 @@ text_sensor:
     id: controller_mode
     icon: "mdi:thermostat-cog"
     lambda: |-
-      uint16_t v = modbus_controller::word_from_hex_str(x, 0);
+      uint16_t v = modbus::helpers::word_from_hex_str(x, 0);
       if (v == 0) return std::string("Heating");
       if (v == 1) return std::string("Cooling");
       return std::string("Unknown");
@@ -1142,6 +1140,7 @@ web_server:
 #  js_include: "../assets/web/moving-particles.js"
 #  js_include: "../assets/web/shooting-stars.js"
   auth:
+    type: digest
     username: !secret web_server_username
     password: !secret web_server_password
   sorting_groups:
