@@ -35,7 +35,7 @@ jobs:
 
       # Keep this pin in sync with the version noted in README Requirements.
       - name: Install ESPHome
-        run: pip install "esphome==2026.7.2"
+        run: pip install "esphome==2026.9.0"
 
       - name: Create CI secrets
         run: |

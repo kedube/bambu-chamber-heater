@@ -108,7 +108,7 @@ Each preset targets the temperature below with a ±1°C hysteresis band (for exa
 ## Requirements
 
 ### Software
-- ESPHome installed locally _(validated against ESPHome 2026.7.2 in CI — see [.github/workflows/ci.yml](.github/workflows/ci.yml); older releases may need YAML adjustments)_
+- ESPHome installed locally _(validated against ESPHome 2026.9.0 in CI — see [.github/workflows/ci.yml](.github/workflows/ci.yml); older releases may need YAML adjustments)_
 - Home Assistant with the [Bambu Lab HA integration](https://github.com/greghesp/ha-bambulab)
 
 ### Common Hardware
