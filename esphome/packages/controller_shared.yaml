@@ -284,7 +284,7 @@ logger:
 
 ota:
   - platform: esphome
-    password: !secret ota_password
+    encryption: 
   - platform: web_server
 
 wifi:
@@ -326,6 +326,7 @@ uart:
 
 modbus:
   send_wait_time: 250ms
+  turnaround_time: 200ms
   uart_id: uart_bus
   role: client
   id: modbus1
@@ -336,7 +337,6 @@ modbus_controller:
     modbus_id: modbus1
     setup_priority: -10
     update_interval: ${modbus_update_interval}
-    command_throttle: 200ms
 
 sensor:
   - platform: modbus_controller
@@ -517,7 +517,6 @@ text_sensor:
     name: "Controller Status"
     address: 0x0000
     register_type: holding
-    register_count: 1
     response_size: 2
     raw_encode: HEXBYTES
     id: controller_status
@@ -549,7 +548,6 @@ text_sensor:
     name: "Temp Sensor Status"
     address: 0x0001
     register_type: holding
-    register_count: 1
     response_size: 2
     raw_encode: HEXBYTES
     id: sensor_status
@@ -574,7 +572,6 @@ text_sensor:
     name: "Temp Unit"
     address: 0x0004
     register_type: holding
-    register_count: 1
     response_size: 2
     raw_encode: HEXBYTES
     id: temperature_unit
@@ -604,7 +601,6 @@ text_sensor:
     name: "Controller Mode"
     address: 0x0005
     register_type: holding
-    register_count: 1
     response_size: 2
     raw_encode: HEXBYTES
     id: controller_mode

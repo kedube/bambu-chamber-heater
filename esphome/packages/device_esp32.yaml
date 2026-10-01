@@ -152,7 +152,7 @@ light:
     pin:
       number: ${status_led_pin}
       ignore_strapping_warning: true
-    rgb_order: RGB
+    channel_colors: RGB
     num_leds: 1
     chipset: ws2812
     restore_mode: ALWAYS_OFF
