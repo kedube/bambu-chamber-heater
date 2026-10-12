@@ -30,6 +30,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v6
+        id: python
         with:
           python-version: "3.13"
 
@@ -64,6 +65,9 @@ jobs:
 
       # Compiling one unit variant per platform is enough: Celsius and
       # Fahrenheit differ only in numeric substitutions.
+      # The build directory records absolute paths into the Python install
+      # (ninja comes from pip), so a cache from another Python patch release
+      # points at tools that no longer exist. Key on the exact version.
       - name: Cache build tools
         if: matrix.unit == 'celsius'
         uses: actions/cache@v4
@@ -71,9 +75,9 @@ jobs:
           path: |
             ~/.platformio
             esphome/.esphome
-          key: pio-${{ matrix.device }}-${{ hashFiles('esphome/**/*.yaml') }}
+          key: pio-${{ matrix.device }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('esphome/**/*.yaml') }}
           restore-keys: |
-            pio-${{ matrix.device }}-
+            pio-${{ matrix.device }}-py${{ steps.python.outputs.python-version }}-
 
       - name: Compile firmware
         if: matrix.unit == 'celsius'
